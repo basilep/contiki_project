@@ -4,6 +4,8 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+
 
 #include "sys/node-id.h"
 
@@ -13,20 +15,105 @@
 #define LOG_LEVEL LOG_LEVEL_INFO
 
 /* OTHER CONFIGURATION */
-#define SEND_INTERVAL (500 * CLOCK_SECOND)
+#define SEND_INTERVAL (2 * CLOCK_SECOND)
 
+
+// REALOC FROM https://github.com/kYc0o/kevoree-contiki/blob/master/realloc.c (Cooja didn't recognise the realloc)
+#include "realloc.h"
+size_t getsize(void *p)
+{
+	size_t *in = p;
+
+	if(in)
+	{
+		--in; 
+		return *in;
+	}
+
+	return -1;
+}
+
+void *realloc(void *ptr, size_t size)
+{
+	void *newptr;
+	int msize;
+	msize = getsize(ptr);
+
+	if (size <= msize)
+		return ptr;
+
+	newptr = malloc(size);
+	memcpy(newptr, ptr, msize);
+	free(ptr);
+
+	return newptr;
+}
+//-------------------------------------
 static linkaddr_t null_addr = {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }};//TOCHANGE
 
-static unsigned data_to_send = 10;  //TOCHANGE
+//static unsigned data_to_send = 10;  //TOCHANGE
 
 static int in_network = 0; // Says if the node is already connected to the network ()
 
-typedef struct neighboor
-{
-  linkaddr_t neighboor_addr;
-}neighboor;
+typedef enum {
+  BORDER_ROUTER,
+  COORDINATOR,
+  SENSOR
+} node_type_t;
 
-static neighboor neighboor_table;
+typedef struct node {
+  node_type_t type;
+  linkaddr_t parent;
+  linkaddr_t *children; // pointer to an array of linkaddr_t
+  uint16_t nb_children;
+} node_t;
+
+typedef struct data_structure{
+  uint8_t step_signal;
+  union {
+    uint8_t seconde_step;
+    uint16_t rssi;
+    node_type_t node_type;
+  } payload;
+}data_structure_t;
+
+static node_t my_node;
+static data_structure_t data_to_send;
+
+static int has_parent = 0; //TO DELETE OR CHANGE
+
+void add_child(node_t *n, linkaddr_t child) {
+  // Allocate memory for one additional child
+  n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));   //-> is used to access the element of a struct through a pointer
+
+  // Copy the new child's address into the new memory location
+  linkaddr_copy(&n->children[n->nb_children], &child);
+
+  // Increment the number of children
+  n->nb_children++;
+}
+
+void remove_child(node_t *n, linkaddr_t child) {
+  // Search for the index of the child in the array
+  int i;
+  for (i = 0; i < n->nb_children; i++) {
+    if (linkaddr_cmp(&n->children[i], &child)) {
+      break;
+    }
+  }
+
+  // If the child was found in the array, remove it
+  if (i < n->nb_children) {
+    // Shift all elements after the child's index down by one
+    memmove(&n->children[i], &n->children[i + 1], (n->nb_children - i - 1) * sizeof(linkaddr_t));
+
+    // Deallocate the memory for the last element in the array
+    n->children = realloc(n->children, (n->nb_children - 1) * sizeof(linkaddr_t));
+
+    // Decrement the number of children
+    n->nb_children--;
+  }
+}
 
 /* PROCESS CREATION */
 PROCESS(node_example, "Node Example");
@@ -36,42 +123,40 @@ AUTOSTART_PROCESSES(&node_example);
 void input_callback(const void *data, uint16_t len,
   const linkaddr_t *src, const linkaddr_t *dest)
 {
-  if(len == sizeof(unsigned)) {
-    unsigned data_receive;
-    memcpy(&data_receive, data, sizeof(data_receive));
-    if(data_receive == 0){
+    data_structure_t *data_receive = (data_structure_t *) data;
+    if(data_receive->step_signal == 0){
       LOG_INFO("Received a connection request from ");
       LOG_INFO_LLADDR(src);
-      LOG_INFO_("\n");
-      data_to_send   = 1;
+      LOG_INFO_(" which is a %u node type\n", data_receive->payload.node_type);
+      data_to_send.step_signal = 1;
       NETSTACK_NETWORK.output(src);
-      linkaddr_copy(&(neighboor_table.neighboor_addr), src);
-      //memcpy(&(routing_table.routes[routing_table.nb_route].next_hop_addr), src, sizeof(linkaddr_t));
+      add_child(&my_node, *src);
       in_network = 1;
     }
-    else if(data_receive == 1){
+    else if(data_receive->step_signal == 1 && has_parent == 0){
       LOG_INFO_LLADDR(src);
-      LOG_INFO_(" has accpeted my connection request\n");
-      linkaddr_copy(&(neighboor_table.neighboor_addr), src);
+      LOG_INFO_(" has accepted my connection request, he is now my parent\n");
+      linkaddr_copy(&(my_node.parent), src);
+      has_parent = 1;
       in_network = 1;
-      }
+    }
     else{
-      LOG_INFO("We are already connected, you send me %u\n", data_receive);
+      LOG_INFO("We are already connected, you send me the signal %u\n", data_receive->step_signal);
     }    
-  }
 }
 
 /* MAIN PART PROCESS CODE */
 PROCESS_THREAD(node_example, ev, data)
 {
-  // Declare the timer
+  // declaration
   static struct etimer timer;
-
+  my_node.type = SENSOR;
+  data_to_send.payload.node_type = SENSOR;
   PROCESS_BEGIN();
 
   /* Initialize NullNet */
   nullnet_buf = (uint8_t *)&data_to_send;
-  nullnet_len = sizeof(data_to_send);
+  nullnet_len = sizeof(data_to_send); //PUT IT EVERYTIME IT CHANGES ??
   nullnet_set_input_callback(input_callback);
 
   if(!linkaddr_cmp(&null_addr, &linkaddr_node_addr)) {    //&linkaddr_node_addr is the current node address
@@ -79,22 +164,25 @@ PROCESS_THREAD(node_example, ev, data)
     etimer_set(&timer, SEND_INTERVAL);
     while(1) {
       PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
-
-
-    if(!in_network){
-      // Not in the network at the moment -> broadcast a packet to know the neighboors
-      LOG_INFO("Hi, I\'m the node %u would like to join the network, let's broadcast the signal 0\n", node_id); //node_id return the ID of the current node
-      data_to_send = 0;
-      NETSTACK_NETWORK.output(NULL);
-    }
-
-    else{
-      LOG_INFO("My data to send is %u\n", data_to_send);
-      NETSTACK_NETWORK.output(&(neighboor_table.neighboor_addr));  // Use to sent data to the destination
-      data_to_send++;
-
-    }
-    etimer_reset(&timer);
+      if(!in_network){
+        // Not in the network at the moment -> broadcast a packet to know the neighboors
+        LOG_INFO("Hi, I\'m the node %u would like to join the network, let's broadcast the signal 0\n", node_id); //node_id return the ID of the current node
+        LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
+        data_to_send.step_signal = 0;
+        data_to_send.payload.node_type = SENSOR;
+        NETSTACK_NETWORK.output(NULL);
+      }
+      else if(has_parent){
+        data_to_send.step_signal += 1;
+        LOG_INFO("I'm sending %u to my parent\n", data_to_send.step_signal);
+        NETSTACK_NETWORK.output(&(my_node.parent));  // Use to sent data to the destination
+      }
+      else{
+        data_to_send.step_signal += 1;
+        LOG_INFO("I'm sending %u to my children\n", data_to_send.step_signal);
+        NETSTACK_NETWORK.output(&(my_node.children[0]));  // Use to sent data to the destination
+      }
+      etimer_reset(&timer);
     }
   }
   PROCESS_END();
