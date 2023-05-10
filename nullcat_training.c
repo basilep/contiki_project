@@ -1,6 +1,7 @@
 #include "contiki.h"
 #include "net/netstack.h"
 #include "net/nullnet/nullnet.h"
+#include "net/packetbuf.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -15,7 +16,7 @@
 #define LOG_LEVEL LOG_LEVEL_INFO
 
 /* OTHER CONFIGURATION */
-#define SEND_INTERVAL (2 * CLOCK_SECOND)
+#define SEND_INTERVAL (1 * CLOCK_SECOND)
 
 
 // REALOC FROM https://github.com/kYc0o/kevoree-contiki/blob/master/realloc.c (Cooja didn't recognise the realloc)
@@ -49,7 +50,7 @@ void *realloc(void *ptr, size_t size)
 	return newptr;
 }
 //-------------------------------------
-static linkaddr_t null_addr = {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }};//TOCHANGE
+//static linkaddr_t null_addr = {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }};//TOCHANGE
 
 //static unsigned data_to_send = 10;  //TOCHANGE
 
@@ -123,27 +124,36 @@ AUTOSTART_PROCESSES(&node_example);
 void input_callback(const void *data, uint16_t len,
   const linkaddr_t *src, const linkaddr_t *dest)
 {
-    data_structure_t *data_receive = (data_structure_t *) data;
-    if(data_receive->step_signal == 0){
-      LOG_INFO("Received a connection request from ");
-      LOG_INFO_LLADDR(src);
-      LOG_INFO_(" which is a %u node type\n", data_receive->payload.node_type);
-      data_to_send.step_signal = 1;
-      NETSTACK_NETWORK.output(src);
-      add_child(&my_node, *src);
-      in_network = 1;
-    }
-    else if(data_receive->step_signal == 1 && has_parent == 0){
+  data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t
+  if(!in_network){
+    // NOT IN NETWORK
+    if(data_receive->step_signal == 1){ // CONNECTION RESPONSE  (&& has_parent == 0 -> TO DELETE)
       LOG_INFO_LLADDR(src);
       LOG_INFO_(" has accepted my connection request, he is now my parent\n");
       linkaddr_copy(&(my_node.parent), src);
       has_parent = 1;
       in_network = 1;
     }
-    else{
-      LOG_INFO("We are already connected, you send me the signal %u\n", data_receive->step_signal);
-    }    
-}
+  }
+  else{
+    // IN NETWORK
+    if(data_receive->step_signal == 0){ // CONNECTION REQUEST
+      LOG_INFO("Received a connection request from ");
+      LOG_INFO_LLADDR(src);
+      LOG_INFO_(" which is a %u node type\n", data_receive->payload.node_type);
+      LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+      data_to_send.step_signal = 1; // CONNECTION RESPONSE
+      add_child(&my_node, *src);
+      NETSTACK_NETWORK.output(src);
+    }
+    else if(my_node.nb_children>0){
+      LOG_INFO_LLADDR(src);
+      LOG_INFO_(" sent me the signal %u\n", data_receive->step_signal);
+      LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+    }
+  } 
+} 
+
 
 /* MAIN PART PROCESS CODE */
 PROCESS_THREAD(node_example, ev, data)
@@ -152,6 +162,12 @@ PROCESS_THREAD(node_example, ev, data)
   static struct etimer timer;
   my_node.type = SENSOR;
   data_to_send.payload.node_type = SENSOR;
+
+  if(node_id == 1){
+    NETSTACK_NETWORK.output(NULL);  // Needed to activate the antenna has he must do a broadcast first
+    in_network = 1;
+  }
+
   PROCESS_BEGIN();
 
   /* Initialize NullNet */
@@ -159,31 +175,36 @@ PROCESS_THREAD(node_example, ev, data)
   nullnet_len = sizeof(data_to_send); //PUT IT EVERYTIME IT CHANGES ??
   nullnet_set_input_callback(input_callback);
 
-  if(!linkaddr_cmp(&null_addr, &linkaddr_node_addr)) {    //&linkaddr_node_addr is the current node address
-    LOG_INFO("The clock second is %lu\n", CLOCK_SECOND);
-    etimer_set(&timer, SEND_INTERVAL);
-    while(1) {
-      PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
-      if(!in_network){
-        // Not in the network at the moment -> broadcast a packet to know the neighboors
-        LOG_INFO("Hi, I\'m the node %u would like to join the network, let's broadcast the signal 0\n", node_id); //node_id return the ID of the current node
-        LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
-        data_to_send.step_signal = 0;
-        data_to_send.payload.node_type = SENSOR;
-        NETSTACK_NETWORK.output(NULL);
-      }
-      else if(has_parent){
+
+
+
+  etimer_set(&timer, SEND_INTERVAL);
+  while(1) {
+    PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
+    if(!in_network){
+      // Not in the network at the moment -> broadcast a packet to know the neighboors
+      LOG_INFO("Hi, I\'m the node %u would like to join the network, let's broadcast the signal 0\n", node_id); //node_id return the ID of the current node
+      LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
+      data_to_send.step_signal = 0;
+      data_to_send.payload.node_type = SENSOR;
+      NETSTACK_NETWORK.output(NULL);
+    }
+    else{
+      if(has_parent){
         data_to_send.step_signal += 1;
         LOG_INFO("I'm sending %u to my parent\n", data_to_send.step_signal);
         NETSTACK_NETWORK.output(&(my_node.parent));  // Use to sent data to the destination
       }
-      else{
+      if(my_node.nb_children > 0){
         data_to_send.step_signal += 1;
         LOG_INFO("I'm sending %u to my children\n", data_to_send.step_signal);
         NETSTACK_NETWORK.output(&(my_node.children[0]));  // Use to sent data to the destination
       }
-      etimer_reset(&timer);
-    }
+      else{
+        LOG_INFO("I'm alone on the network :(\n");
+      }
+    } 
+    etimer_reset(&timer);
   }
   PROCESS_END();
 }
