@@ -135,7 +135,16 @@ void input_callback(const void *data, uint16_t len,
 {
   data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t
 
-  if(data_receive->step_signal == 1){ // CONNECTION RESPONSE
+  if(data_receive->step_signal == 0){ // CONNECTION REQUEST
+    LOG_INFO("Received a connection request from ");
+    LOG_INFO_LLADDR(src);
+    LOG_INFO_(" which is a %u node type\n", data_receive->payload.node_type);
+    LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+    data_to_send.step_signal = 1; // CONNECTION RESPONSE
+    add_child(&my_node, *src);
+    NETSTACK_NETWORK.output(src);
+  }
+  else if(data_receive->step_signal == 1){ // CONNECTION RESPONSE
     if(best_rssi == -100){
       LOG_INFO_LLADDR(src);
       LOG_INFO_(" has accepted my connection request (rssi = %d)\n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
@@ -144,32 +153,23 @@ void input_callback(const void *data, uint16_t len,
       in_network = 1;
     }
     else if(is_better_rssi(best_rssi)){
-        data_to_send.step_signal = 2; //Aware the parent to change children
-        NETSTACK_NETWORK.output(my_node.parent);
+        data_to_send.step_signal = 2; //Aware the current parent to change children
+        NETSTACK_NETWORK.output(&(my_node.parent));
         LOG_INFO_LLADDR(src);
         LOG_INFO_(" has a better rssi so I change my parent (rssi = %d)\n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
-        linkaddr_copy(&(my_node.parent), src);
+        linkaddr_copy(&(my_node.parent), src);  // change the parent
         has_parent = 1;
         in_network = 1;
     }
   }
-  else{
-    // IN NETWORK
-    if(data_receive->step_signal == 0){ // CONNECTION REQUEST
-      LOG_INFO("Received a connection request from ");
-      LOG_INFO_LLADDR(src);
-      LOG_INFO_(" which is a %u node type\n", data_receive->payload.node_type);
-      LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
-      data_to_send.step_signal = 1; // CONNECTION RESPONSE
-      add_child(&my_node, *src);
-      NETSTACK_NETWORK.output(src);
-    }
-    else if(my_node.nb_children>0){
-      LOG_INFO_LLADDR(src);
-      LOG_INFO_(" sent me the signal %u\n", data_receive->step_signal);
-      LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
-    }
-  } 
+  else if(data_receive->step_signal == 2){  // Changing children
+    remove_child(&my_node, *src);
+  }
+  else if(my_node.nb_children>0){
+    LOG_INFO_LLADDR(src);
+    LOG_INFO_(" sent me the signal %u\n", data_receive->step_signal);
+    LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+  }
 } 
 
 
@@ -209,14 +209,16 @@ PROCESS_THREAD(node_example, ev, data)
     }
     else{
       if(has_parent){
-        data_to_send.step_signal += 1;
+        data_to_send.step_signal = 150;
         LOG_INFO("I'm sending %u to my parent\n", data_to_send.step_signal);
         NETSTACK_NETWORK.output(&(my_node.parent));  // Use to sent data to the destination
       }
       if(my_node.nb_children > 0){
-        data_to_send.step_signal += 1;
+        data_to_send.step_signal = 100;
         LOG_INFO("I'm sending %u to my children\n", data_to_send.step_signal);
-        NETSTACK_NETWORK.output(&(my_node.children[0]));  // Use to sent data to the destination
+        for(int i=0; i<my_node.nb_children;i++){
+          NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+        }
       }
       else{
         LOG_INFO("I'm alone on the network :(\n");
