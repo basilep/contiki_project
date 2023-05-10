@@ -199,4 +199,3 @@ PROCESS_THREAD(node_example, ev, data)
   }
   PROCESS_END();
 }
-
