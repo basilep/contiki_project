@@ -90,9 +90,19 @@ static data_structure_t data_to_send;
 static int has_parent = 0; //TO DELETE OR CHANGE
 
 void add_child(node_t *n, linkaddr_t child) {
-  // Allocate memory for one additional child
-  n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));   //-> is used to access the element of a struct through a pointer
-
+  if(n->nb_children == 0){
+    n->children = (linkaddr_t *) malloc(sizeof(linkaddr_t)); 
+  }
+  else{
+    // Allocate memory for one additional child
+    n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));   //-> is used to access the element of a struct through a pointer
+    
+    // == Manual realloc to test ==
+    //linkaddr_t * temp = (linkaddr_t *) malloc((n->nb_children + 1) * sizeof(linkaddr_t));
+    //memcpy(temp, n->children, n->nb_children * sizeof(linkaddr_t));
+    //free(n->children);
+    //n->children = temp;
+  }
   // Copy the new child's address into the new memory location
   linkaddr_copy(&n->children[n->nb_children], &child);
 
@@ -138,8 +148,10 @@ void input_callback(const void *data, uint16_t len,
       LOG_INFO_LLADDR(src);
       LOG_INFO_(" has accepted my connection request, he is now my parent\n");
       linkaddr_copy(&(my_node.parent), src);
-      data_to_send.step_signal = 2; // Send an ACK to the connectoin
-      NETSTACK_NETWORK.output(src);
+      data_to_send.step_signal = 2; // Send an ACK to the connection
+      NETSTACK_NETWORK.output(&(my_node.parent));
+      LOG_INFO_LLADDR(&(my_node.parent));
+      LOG_INFO("Sent ACK 2\n");
       
   }
   if(in_network){
@@ -150,8 +162,10 @@ void input_callback(const void *data, uint16_t len,
       LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
       data_to_send.step_signal = 1; // Send a connection response
       NETSTACK_NETWORK.output(src);
+      LOG_INFO("Sent response 1\n");
     }
     else if(data_receive->step_signal == 2){  // ACKNOWLEDGE CONNECTION
+      LOG_INFO("RECEIVED ACK\n");
       LOG_INFO_LLADDR(src);
       LOG_INFO_(" is now my child\n");
       add_child(&my_node, *src);  //add the child to the list of children
@@ -204,8 +218,9 @@ PROCESS_THREAD(node_example, ev, data)
       }
       if(my_node.nb_children > 0){
         data_to_send.step_signal = 150;
+        LOG_INFO("I have %u children\n", my_node.nb_children);
         LOG_INFO("I'm sending %u to my children ", data_to_send.step_signal);
-        for(int i=0; i<my_node.nb_children;i++){
+        for(int i=0; i < my_node.nb_children; i++){
           LOG_INFO_LLADDR(&(my_node.children[i]));
           LOG_INFO_("\n");
           NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination  // ERROR HERE
@@ -218,7 +233,7 @@ PROCESS_THREAD(node_example, ev, data)
 }
 
 
-"""
+/*
 int is_better_rssi(int rssi){ //check signal strenght
   // rssi need to be the actual best rssi
   if(rssi > packetbuf_attr(PACKETBUF_ATTR_RSSI)){
@@ -229,4 +244,4 @@ int is_better_rssi(int rssi){ //check signal strenght
   }
 }
 
-"""
+*/
