@@ -88,6 +88,7 @@ static node_t my_node = {
 static data_structure_t data_to_send;
 
 static int has_parent = 0; //TO DELETE OR CHANGE
+static int best_rssi = -100;
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -132,6 +133,21 @@ void remove_child(node_t *n, linkaddr_t child) {
   }
 }
 
+/* Function to check the better rssi
+   between the current better  rssi and the last packet receive 
+   (using packetbuf_attr(PACKETBUF_ATTR_RSSI))
+   return 1 if the new rssi is better
+*/
+int is_better_rssi(){
+  LOG_INFO_(" RSSI : best = %d, current = %d ; ", best_rssi, packetbuf_attr(PACKETBUF_ATTR_RSSI));
+  if(best_rssi < packetbuf_attr(PACKETBUF_ATTR_RSSI)){
+    return 1;
+  }
+  else{
+    return 0;
+  }
+}
+
 /* PROCESS CREATION */
 PROCESS(node_example, "Node Example");
 AUTOSTART_PROCESSES(&node_example);
@@ -140,40 +156,86 @@ AUTOSTART_PROCESSES(&node_example);
 void input_callback(const void *data, uint16_t len,
   const linkaddr_t *src, const linkaddr_t *dest)
 {
+  linkaddr_t src_copy;  // Need to do a copy, to prevent problems if src is changing during the execution
+  linkaddr_copy(&src_copy, src);
   data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t
-
-  if(data_receive->step_signal == 1 && !in_network){ // CONNECTION RESPONSE
+  if(linkaddr_cmp(src, &linkaddr_node_addr)){  //Check that the node doesn't get message from itself
+    LOG_INFO("Same address\n");
+  }
+  else
+  {
+    if(data_receive->step_signal == 1 && !in_network){ // CONNECTION RESPONSE
       has_parent = 1;
       in_network = 1;
-      LOG_INFO_LLADDR(src);
-      LOG_INFO_(" has accepted my connection request, he is now my parent\n");
-      linkaddr_copy(&(my_node.parent), src);
+      LOG_INFO("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+      LOG_INFO_LLADDR(&src_copy);
+      best_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+      linkaddr_copy(&(my_node.parent), &src_copy);  //Save the parent address
+      LOG_INFO_(" ; SGN 2 (ack) sent to ");
+      LOG_INFO_LLADDR(&(my_node.parent));
+      LOG_INFO_("\n");
       data_to_send.step_signal = 2; // Send an ACK to the connection
       NETSTACK_NETWORK.output(&(my_node.parent));
-      LOG_INFO_LLADDR(&(my_node.parent));
-      LOG_INFO("Sent ACK 2\n");
-      
-  }
-  if(in_network){
-    if(data_receive->step_signal == 0){ // CONNECTION REQUEST
-      LOG_INFO("Received a connection request from ");
-      LOG_INFO_LLADDR(src);
-      LOG_INFO_(" which is a %u node type\n", data_receive->payload.node_type);
-      LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
-      data_to_send.step_signal = 1; // Send a connection response
-      NETSTACK_NETWORK.output(src);
-      LOG_INFO("Sent response 1\n");
     }
-    else if(data_receive->step_signal == 2){  // ACKNOWLEDGE CONNECTION
-      LOG_INFO("RECEIVED ACK\n");
-      LOG_INFO_LLADDR(src);
-      LOG_INFO_(" is now my child\n");
-      add_child(&my_node, *src);  //add the child to the list of children
-    }
-    else if(data_receive->step_signal> 50){
-      LOG_INFO_LLADDR(src);
-      LOG_INFO_(" sent me the signal %u\n", data_receive->step_signal);
-      LOG_INFO_("Its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+    else if(in_network){
+      if(data_receive->step_signal == 0){ // CONNECTION REQUEST
+        LOG_INFO("SGN 0 (connexion request) received from ");
+        LOG_INFO_LLADDR(&src_copy);
+        data_to_send.step_signal = 1; // Send a connection response
+        LOG_INFO_(" ; SGN 1 (connexion response) send to ");
+        LOG_INFO_LLADDR(&src_copy);
+        LOG_INFO_("\n");
+        NETSTACK_NETWORK.output(&src_copy);
+      }
+      else if(data_receive->step_signal == 1 && has_parent){
+        //TEST
+        LOG_INFO("SGN 1 received from ");
+        
+        LOG_INFO_LLADDR(&src_copy);
+        LOG_INFO_(" ; let's check rssi ;");
+        if(is_better_rssi()){
+          data_to_send.step_signal = 3; // aware the parent the he found a new better node, to delete it from its list
+          LOG_INFO_(" SEND SGN 3 to ");
+          LOG_INFO_LLADDR(&(my_node.parent));
+          LOG_INFO_("\n");
+          NETSTACK_NETWORK.output(&(my_node.parent));
+          LOG_INFO_LLADDR(&src_copy);
+          LOG_INFO_(" has a better rssi, he will be now my parent ; ");
+          best_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+          linkaddr_copy(&(my_node.parent), &src_copy);
+          data_to_send.step_signal = 2; // Send an ACK to the connection
+          LOG_INFO_("SGN 2 (ack) sent to ");
+          LOG_INFO_LLADDR(&(my_node.parent));
+          LOG_INFO_("\n");
+          NETSTACK_NETWORK.output(&(my_node.parent));
+        }
+        else if(linkaddr_cmp(&(my_node.parent), &src_copy)){
+          LOG_INFO_LLADDR(&src_copy);
+          LOG_INFO_(" is already my parent\n");
+        }
+        else{
+          LOG_INFO_LLADDR(&src_copy);
+          LOG_INFO_(" has not a best rssi\n");
+        }
+      }
+      else if(data_receive->step_signal == 2){  // ACKNOWLEDGE CONNECTION
+        LOG_INFO("SGN 2 (ACK) received from ");
+        LOG_INFO_LLADDR(&src_copy);
+        LOG_INFO_(" which is now my child\n");
+        add_child(&my_node, src_copy);  //add the child to the list of children
+      }
+      else if(data_receive->step_signal == 3){  // REMOVE CHILDREN
+        LOG_INFO("RECEIVED CHILD TO REMOVE from ");
+        LOG_INFO_LLADDR(src);
+        LOG_INFO_("\n");
+        remove_child(&my_node, src_copy);
+      }
+      else if(data_receive->step_signal> 50){
+        LOG_INFO(" ");
+        LOG_INFO_LLADDR(&src_copy);
+        LOG_INFO_(" sent me the signal %u and ", data_receive->step_signal);
+        LOG_INFO_("its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+      }
     }
   }
 } 
@@ -203,8 +265,8 @@ PROCESS_THREAD(node_example, ev, data)
     PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&timer));
     if(!in_network){
       // Not in the network at the moment -> broadcast a packet to know the neighboors
-      LOG_INFO("Hi, I\'m the node %u would like to join the network, let's broadcast the signal 0\n", node_id); //node_id return the ID of the current node
-      LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
+      LOG_INFO("Node %u broadcasts SGN 0\n", node_id); //node_id return the ID of the current node
+      //LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
       data_to_send.step_signal = 0;
       NETSTACK_NETWORK.output(NULL);
     }
@@ -232,16 +294,14 @@ PROCESS_THREAD(node_example, ev, data)
   PROCESS_END();
 }
 
-
+// FULL LOG
 /*
-int is_better_rssi(int rssi){ //check signal strenght
-  // rssi need to be the actual best rssi
-  if(rssi > packetbuf_attr(PACKETBUF_ATTR_RSSI)){
-    return 1;
+LOG_INFO("Parent: ");
+LOG_INFO_LLADDR(&(my_node.parent));
+LOG_INFO("\n\t\tChildren: ");
+for(int i=0; i < my_node.nb_children; i++){
+  LOG_INFO_LLADDR(&(my_node.children[i]));
+  LOG_INFO_(" ; ");
   }
-  else{
-    return 0;
-  }
-}
-
+LOG_INFO_("\n")
 */
