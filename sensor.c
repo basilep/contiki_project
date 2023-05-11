@@ -89,6 +89,7 @@ static data_structure_t data_to_send;
 
 static int has_parent = 0; //TO DELETE OR CHANGE
 static int best_rssi = -100;
+static int nb_iteration = 0;
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -97,12 +98,6 @@ void add_child(node_t *n, linkaddr_t child) {
   else{
     // Allocate memory for one additional child
     n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));   //-> is used to access the element of a struct through a pointer
-    
-    // == Manual realloc to test ==
-    //linkaddr_t * temp = (linkaddr_t *) malloc((n->nb_children + 1) * sizeof(linkaddr_t));
-    //memcpy(temp, n->children, n->nb_children * sizeof(linkaddr_t));
-    //free(n->children);
-    //n->children = temp;
   }
   // Copy the new child's address into the new memory location
   linkaddr_copy(&n->children[n->nb_children], &child);
@@ -188,9 +183,7 @@ void input_callback(const void *data, uint16_t len,
         NETSTACK_NETWORK.output(&src_copy);
       }
       else if(data_receive->step_signal == 1 && has_parent){
-        //TEST
-        LOG_INFO("SGN 1 received from ");
-        
+        LOG_INFO("SGN 1 received from ");      
         LOG_INFO_LLADDR(&src_copy);
         LOG_INFO_(" ; let's check rssi ;");
         if(is_better_rssi()){
@@ -248,9 +241,10 @@ PROCESS_THREAD(node_example, ev, data)
   static struct etimer timer;
   data_to_send.payload.node_type = SENSOR;
 
-  if(node_id == 1){
+  if(node_id == 1 && nb_iteration == 0){
     NETSTACK_NETWORK.output(NULL);  // Needed to activate the antenna has he must do a broadcast first
     in_network = 1;
+    nb_iteration++; //To prevent the execution of the broadcast every thread
   }
 
   PROCESS_BEGIN();
@@ -284,11 +278,12 @@ PROCESS_THREAD(node_example, ev, data)
         LOG_INFO("I'm sending %u to my children ", data_to_send.step_signal);
         for(int i=0; i < my_node.nb_children; i++){
           LOG_INFO_LLADDR(&(my_node.children[i]));
-          LOG_INFO_("\n");
-          NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination  // ERROR HERE
+          LOG_INFO_(" ; ");
+          NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
         }
+        LOG_INFO_("\n");
       }
-    } 
+    }
     etimer_reset(&timer);
   }
   PROCESS_END();
