@@ -89,7 +89,6 @@ static data_structure_t data_to_send;
 
 static int has_parent = 0; //TO DELETE OR CHANGE
 static int best_rssi = -100;
-static int nb_iteration = 0;
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -125,6 +124,21 @@ void remove_child(node_t *n, linkaddr_t child) {
 
     // Decrement the number of children
     n->nb_children--;
+  }
+}
+
+/* Check if nodes from the routing table are still reachable*/
+static void check_network(){
+  if (NETSTACK_ROUTING.node_is_reachable(&dest_addr)) {
+    
+  }
+  else {
+    for(int i=0; i < my_node.nb_children; i++){
+            LOG_INFO_LLADDR(&(my_node.children[i]));
+            LOG_INFO_(" ; ");
+            NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+          }
+    // node is not reachable, do something else
   }
 }
 
@@ -240,11 +254,10 @@ PROCESS_THREAD(node_example, ev, data)
   // declaration
   static struct etimer timer;
   data_to_send.payload.node_type = SENSOR;
-
-  if(node_id == 1 && nb_iteration == 0){
+  
+  if(node_id == 1 && !in_network){
     NETSTACK_NETWORK.output(NULL);  // Needed to activate the antenna has he must do a broadcast first
     in_network = 1;
-    nb_iteration++; //To prevent the execution of the broadcast every thread
   }
 
   PROCESS_BEGIN();
