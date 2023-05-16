@@ -32,6 +32,7 @@ typedef enum {
 
 typedef struct node {
   node_type_t type;
+  int rank;
   linkaddr_t parent;
   uint8_t parent_reach_count; // number or round, the parent didn't anwser (to know if it still reachable)
   linkaddr_t *children; // pointer to an array of linkaddr_t
@@ -41,11 +42,13 @@ typedef struct node {
 
 typedef struct data_structure{
   uint8_t step_signal;
+  uint8_t node_rank;
   node_type_t node_type;
 }data_structure_t;
 
 static node_t my_node = { 
-  .type = SENSOR, 
+  .type = SENSOR,
+  .rank = -1,
   .parent = {{0}}, // initialize all 8 bytes to 0
   .parent_reach_count = 0,
   .children = NULL,
@@ -53,7 +56,11 @@ static node_t my_node = {
   .nb_children = 0 
 };
 
-static data_structure_t data_to_send;
+static data_structure_t data_to_send ={
+  .node_type = SENSOR,
+  .node_rank = -1
+};
+
 static struct ctimer timer;
 static struct ctimer check_network_timer;
 static int best_rssi = -100;
@@ -76,7 +83,7 @@ void add_child(node_t *n, linkaddr_t child) {
   n->nb_children++;
 }
 
-void remove_child(node_t *n, linkaddr_t child) {
+void remove_child(node_t *n, linkaddr_t child) {  //Maybe free it if no children anymore?
   // Search for the index of the child in the array
   int i;
   for (i = 0; i < n->nb_children; i++) {
@@ -132,7 +139,8 @@ void input_callback(const void *data, uint16_t len,
     LOG_INFO_LLADDR(&src_copy);
     best_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
     linkaddr_copy(&(my_node.parent), &src_copy);  //Save the parent address
-    LOG_INFO_(" ; SGN 2 (ack) sent to ");
+    data_to_send.node_rank = data_receive->node_rank +1;  //Save the rank as the parent rank +1
+    LOG_INFO_(" new rank: %d ; SGN 2 (ack) sent to ", data_to_send.node_rank);
     LOG_INFO_LLADDR(&(my_node.parent));
     LOG_INFO_("\n");
     data_to_send.step_signal = 2; // Send an ACK to the connection
@@ -153,13 +161,14 @@ void input_callback(const void *data, uint16_t len,
       LOG_INFO_LLADDR(&src_copy);
       LOG_INFO_(" ; let's check rssi ;");
       if(is_better_rssi()){
+        data_to_send.node_rank = data_receive->node_rank +1;  //Change rank if needed
         data_to_send.step_signal = 3; // aware the parent the he found a new better node, to delete it from its list
         LOG_INFO_(" SEND SGN 3 to ");
         LOG_INFO_LLADDR(&(my_node.parent));
         LOG_INFO_("\n");
         NETSTACK_NETWORK.output(&(my_node.parent));
         LOG_INFO_LLADDR(&src_copy);
-        LOG_INFO_(" has a better rssi, he will be now my parent ; ");
+        LOG_INFO_(" has a better rssi, he will be now my parent ; new rank : %d ; ", data_to_send.node_rank);
         best_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
         linkaddr_copy(&(my_node.parent), &src_copy);
         data_to_send.step_signal = 2; // Send an ACK to the connection
@@ -218,16 +227,20 @@ void input_callback(const void *data, uint16_t len,
 static void send_reachable_state(void* ptr){
   ctimer_reset(&check_network_timer);
   if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){ // Check If there is a parent
-    if(my_node.parent_reach_count>=1){ //TODO change it to >0 ? Afraid that it would not work (let time to get response here)
+    if(my_node.parent_reach_count>=1){
       LOG_INFO_("Parent not reachable anymore : ");
       LOG_INFO_LLADDR(&my_node.parent);
-      LOG_INFO_("\n");
+      LOG_INFO_("; temporary removal\n");
+      linkaddr_copy(&my_node.parent, &linkaddr_null); //setting parent to the null address
+      my_node.parent_reach_count = -1;  //So it goes to 0 after the next increment
+      in_network = 0;
+      best_rssi=-100;
     }
     else{
       data_to_send.step_signal = 4; //Aware that it's still reachable
       NETSTACK_NETWORK.output(&my_node.parent);
     }
-    my_node.parent_reach_count+=1;  // --> not increment for the moment has there is the bug of communication
+    my_node.parent_reach_count+=1;
   }
   for (int i = 0; i < my_node.nb_children; i++) {
     if(my_node.child_reach_count[i]>=1){
@@ -280,12 +293,11 @@ void timer_callback(void* ptr){
 /* MAIN PART PROCESS CODE */
 PROCESS_THREAD(node_example, ev, data)
 {
-  // declaration
-  data_to_send.node_type = SENSOR;
   
   if(node_id == 1 && !in_network){
     NETSTACK_NETWORK.output(NULL);  // Needed to activate the antenna has he must do a broadcast first
     in_network = 1;
+    data_to_send.node_rank = 0;
   }
 
   PROCESS_BEGIN();
