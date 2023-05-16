@@ -41,6 +41,7 @@ def main(ip, port):
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((ip, port))
+    sock.send(b"connection established")
 
     """for _ in range(20): 
         sock.send(b"test\n")
@@ -50,8 +51,9 @@ def main(ip, port):
 
     while True:
         try:
-            sock.send(b"test\n")
             data = receive(sock)
+            message = gen_msg(data)
+            sock.send(message)
             print(data.decode("utf-8"))
             time.sleep(1)
         except socket.error:
@@ -75,7 +77,7 @@ def gen_msg(data):
     data += str(global_counter)
 
     # Process data here then generate based on processing
-    message = b"" + bin(data)[2:]
+    message = b"" + bin(data)[2:] + b"\n"
 
     global_counter += 1
     display_global_counter_message()
