@@ -52,9 +52,12 @@ def main(ip, port):
     while True:
         try:
             data = receive(sock)
-            message = gen_msg(data)
-            sock.send(message)
             print(data.decode("utf-8"))
+
+            if data != b"":
+                message = gen_msg(data)
+                sock.send(message)
+                
             time.sleep(1)
         except socket.error:
             print("Connection closed.")
