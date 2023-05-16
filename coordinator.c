@@ -4,6 +4,8 @@
 #include "net/packetbuf.h"
 #include "realloc.h"
 
+#include "sys/clock.h"
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +44,7 @@ typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
   node_type_t node_type;
+  clock_time_t clock;
 }data_structure_t;
 
 static node_t my_node = { 
@@ -54,7 +57,8 @@ static node_t my_node = {
 
 static data_structure_t data_to_send ={
   .node_type = COORDINATOR,
-  .node_rank = 1
+  .node_rank = 1,
+  .clock = 0
 };
 
 static struct ctimer timer;
@@ -179,6 +183,19 @@ void input_callback(const void *data, uint16_t len,
           break;
         }
       }
+    }
+    else if(data_receive->step_signal == 6){
+      LOG_INFO("RECEIVED CLOCK REQUEST FROM ");
+      LOG_INFO_LLADDR(&src_copy);
+      
+
+      data_to_send.clock = clock_time(); // get its own clock
+      data_to_send.step_signal = 7;
+      //TODO: changer le step_signal à envoyer à 7
+      LOG_INFO_(" ; My clock is %lu", data_to_send.clock);
+      LOG_INFO_("\n");
+      NETSTACK_NETWORK.output(&src_copy);
+
     }
     else if(data_receive->step_signal> 50){
       LOG_INFO(" ");

@@ -4,6 +4,8 @@
 #include "net/packetbuf.h"
 #include "realloc.h"
 
+#include "sys/clock.h"
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +21,7 @@
 /* OTHER CONFIGURATION */
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
 #define CHECK_NETWORK (5 * CLOCK_SECOND)
+#define BERKELEY_INTERVAL (4.5 * CLOCK_SECOND)
 
 //-------------------------------------
 
@@ -42,6 +45,7 @@ typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
   node_type_t node_type;
+  clock_time_t clock;
 }data_structure_t;
 
 static node_t my_node = { 
@@ -54,11 +58,13 @@ static node_t my_node = {
 
 static data_structure_t data_to_send ={
   .node_type = BORDER_ROUTER,
-  .node_rank = 0
+  .node_rank = 0,
+  .clock = 0
 };
 
 static struct ctimer timer;
 static struct ctimer check_network_timer;
+static struct ctimer berkeley_timer;
 static int best_rssi = -100;
 
 void add_child(node_t *n, linkaddr_t child) {
@@ -162,12 +168,34 @@ void input_callback(const void *data, uint16_t len,
             }
         }
     }
+    else if(data_receive->step_signal == 7){
+      LOG_INFO("RECEIVED CLOCK RESPONSE FROM ");
+      LOG_INFO_LLADDR(&src_copy);
+      LOG_INFO_(" where clock is %lu", data_receive->clock);
+      LOG_INFO_(" and my clock is %lu", clock_time());
+      LOG_INFO_("\n");
+    }
     else if(data_receive->step_signal> 50){
         LOG_INFO(" ");
         LOG_INFO_LLADDR(&src_copy);
         LOG_INFO_(" sent me the signal %u and ", data_receive->step_signal);
         LOG_INFO_("its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
     }
+}
+
+/**/
+static void send_clock_request(void* ptr){
+  ctimer_reset(&berkeley_timer);
+
+  data_to_send.step_signal = 6;
+  LOG_INFO("I'm sending clock request %u to my children ", data_to_send.step_signal);
+  for (int i = 0; i < my_node.nb_children; i++) {
+    
+    LOG_INFO_LLADDR(&(my_node.children[i]));
+    LOG_INFO_(" ; child");
+    NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+  }
+  LOG_INFO_("\n");
 }
 
 /* CALLBACK TO CHECK REACHABLE NODES */
@@ -255,6 +283,7 @@ PROCESS_THREAD(node_example, ev, data)
 
   ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
   ctimer_set(&check_network_timer, CHECK_NETWORK, send_reachable_state, NULL);
+  ctimer_set(&berkeley_timer, BERKELEY_INTERVAL, send_clock_request , NULL);
   while (1) {
     PROCESS_WAIT_EVENT();
   }
