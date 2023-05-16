@@ -18,7 +18,7 @@
 
 /* OTHER CONFIGURATION */
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
-#define CHECK_NETWORK (3 * CLOCK_SECOND)
+#define CHECK_NETWORK (5 * CLOCK_SECOND)
 
 //-------------------------------------
 
@@ -32,15 +32,15 @@ typedef enum {
 
 typedef struct node {
   linkaddr_t parent;
-  uint8_t parent_reach_count; // number or round, the parent didn't anwser (to know if it still reachable)
+  int parent_reach_count; // number or round, the parent didn't anwser (to know if it still reachable)
   linkaddr_t *children; // pointer to an array of linkaddr_t
-  uint8_t *child_reach_count; // same as the parent_reach_count but for children
+  int *child_reach_count; // same as the parent_reach_count but for children
   uint16_t nb_children;
 } node_t;
 
 typedef struct data_structure{
   uint8_t step_signal;
-  uint8_t node_rank;
+  int node_rank;
   node_type_t node_type;
 }data_structure_t;
 
@@ -64,12 +64,12 @@ static int best_rssi = -100;
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
     n->children = (linkaddr_t *) malloc(sizeof(linkaddr_t));
-    n->child_reach_count = (uint8_t*) malloc(sizeof(uint8_t));
+    n->child_reach_count = (int*) malloc(sizeof(int));
   }
   else{
     // Allocate memory for one additional child
     n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));   //-> is used to access the element of a struct through a pointer
-    n->child_reach_count = realloc(n->child_reach_count, (n->nb_children+1)*sizeof(uint8_t));
+    n->child_reach_count = realloc(n->child_reach_count, (n->nb_children+1)*sizeof(int));
   }
   // Copy the new child's address into the new memory location
   linkaddr_copy(&n->children[n->nb_children], &child);
@@ -190,7 +190,7 @@ static void send_reachable_state(void* ptr){
     my_node.parent_reach_count+=1;
   }
   for (int i = 0; i < my_node.nb_children; i++) {
-    if(my_node.child_reach_count[i]>=1){
+    if(my_node.child_reach_count[i]>1){
       LOG_INFO_(" child : ");
       LOG_INFO_LLADDR(&my_node.children[i]);
       LOG_INFO_("not reachable anymore\n");
