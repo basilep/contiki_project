@@ -1,4 +1,5 @@
 CONTIKI_PROJECT = nullcat_training.c
+PROJECT_SOURCEFILES = realloc.c
 all: $(CONTIKI_PROJECT)
 
 CONTIKI = ../

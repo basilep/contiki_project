@@ -2,6 +2,7 @@
 #include "net/netstack.h"
 #include "net/nullnet/nullnet.h"
 #include "net/packetbuf.h"
+#include "realloc.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -19,41 +20,7 @@
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
 #define CHECK_NETWORK (3 * CLOCK_SECOND)
 
-
-// REALOC FROM https://github.com/kYc0o/kevoree-contiki/blob/master/realloc.c (Cooja didn't recognise the realloc)
-#include "realloc.h"
-size_t getsize(void *p)
-{
-	size_t *in = p;
-
-	if(in)
-	{
-		--in; 
-		return *in;
-	}
-
-	return -1;
-}
-
-void *realloc(void *ptr, size_t size)
-{
-	void *newptr;
-	int msize;
-	msize = getsize(ptr);
-
-	if (size <= msize)
-		return ptr;
-
-	newptr = malloc(size);
-	memcpy(newptr, ptr, msize);
-	free(ptr);
-
-	return newptr;
-}
 //-------------------------------------
-//static linkaddr_t null_addr = {{ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }};//TOCHANGE
-
-//static unsigned data_to_send = 10;  //TOCHANGE
 
 static int in_network = 0; // Says if the node is already connected to the network ()
 
@@ -74,11 +41,7 @@ typedef struct node {
 
 typedef struct data_structure{
   uint8_t step_signal;
-  union {
-    uint8_t seconde_step;
-    uint16_t rssi;
-    node_type_t node_type;
-  } payload;
+  node_type_t node_type;
 }data_structure_t;
 
 static node_t my_node = { 
@@ -93,7 +56,6 @@ static node_t my_node = {
 static data_structure_t data_to_send;
 static struct ctimer timer;
 static struct ctimer check_network_timer;
-static int has_parent = 0; //TO DELETE OR CHANGE
 static int best_rssi = -100;
 
 void add_child(node_t *n, linkaddr_t child) {
@@ -165,7 +127,6 @@ void input_callback(const void *data, uint16_t len,
   linkaddr_copy(&src_copy, src);
   data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t
   if(data_receive->step_signal == 1 && !in_network){ // CONNECTION RESPONSE
-    has_parent = 1;
     in_network = 1;
     LOG_INFO("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
     LOG_INFO_LLADDR(&src_copy);
@@ -187,7 +148,7 @@ void input_callback(const void *data, uint16_t len,
       LOG_INFO_("\n");
       NETSTACK_NETWORK.output(&src_copy);
     }
-    else if(data_receive->step_signal == 1 && has_parent){
+    else if(data_receive->step_signal == 1 && !linkaddr_cmp(&(my_node.parent), &linkaddr_null)){  //Also check if there is a parent
       LOG_INFO("SGN 1 received from ");      
       LOG_INFO_LLADDR(&src_copy);
       LOG_INFO_(" ; let's check rssi ;");
@@ -229,21 +190,15 @@ void input_callback(const void *data, uint16_t len,
       remove_child(&my_node, src_copy);
     }
     else if(data_receive->step_signal == 4){
-      //LOG_INFO_("SGN 4 (broadcast info) received from ");
-      //LOG_INFO_LLADDR(&src_copy);
-      //LOG_INFO_(" ; reply with SGN 5\n");
       data_to_send.step_signal = 5; // Send an ACK to the connection
       NETSTACK_NETWORK.output(&src_copy);
     }
     else if(data_receive->step_signal == 5){
-      //LOG_INFO_("SGN 5 (info response) received from ");
-      //LOG_INFO_LLADDR(&src_copy);
       if (linkaddr_cmp(&my_node.parent, &src_copy)) {
         my_node.parent_reach_count=0;
       }   
       for (int i = 0; i < my_node.nb_children; i++) {
         if (linkaddr_cmp(&my_node.children[i], &src_copy)) { //Get the children
-          //LOG_INFO_(" ; reseting its count to 0");
           my_node.child_reach_count[i] = 0;  //reset its count
           break;
         }
@@ -262,7 +217,7 @@ void input_callback(const void *data, uint16_t len,
 /* CALLBACK TO CHECK REACHABLE NODES */
 static void send_reachable_state(void* ptr){
   ctimer_reset(&check_network_timer);
-  if(has_parent){ // Check If there is a parent
+  if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){ // Check If there is a parent
     if(my_node.parent_reach_count>=1){ //TODO change it to >0 ? Afraid that it would not work (let time to get response here)
       LOG_INFO_("Parent not reachable anymore : ");
       LOG_INFO_LLADDR(&my_node.parent);
@@ -300,7 +255,7 @@ void timer_callback(void* ptr){
     NETSTACK_NETWORK.output(NULL);
   }
   else{
-    if(has_parent){
+    if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){
       data_to_send.step_signal = 100;
       LOG_INFO("I'm sending %u to my parent ", data_to_send.step_signal);
       LOG_INFO_LLADDR(&(my_node.parent));
@@ -326,7 +281,7 @@ void timer_callback(void* ptr){
 PROCESS_THREAD(node_example, ev, data)
 {
   // declaration
-  data_to_send.payload.node_type = SENSOR;
+  data_to_send.node_type = SENSOR;
   
   if(node_id == 1 && !in_network){
     NETSTACK_NETWORK.output(NULL);  // Needed to activate the antenna has he must do a broadcast first
