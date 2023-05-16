@@ -17,7 +17,7 @@
 
 /* OTHER CONFIGURATION */
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
-#define CHECK_NETWORK (10 * CLOCK_SECOND)
+#define CHECK_NETWORK (3 * CLOCK_SECOND)
 
 
 // REALOC FROM https://github.com/kYc0o/kevoree-contiki/blob/master/realloc.c (Cooja didn't recognise the realloc)
@@ -66,7 +66,7 @@ typedef enum {
 typedef struct node {
   node_type_t type;
   linkaddr_t parent;
-  uint8_t parent_reach_count; // number or round, the parent didn't anwser (to know if it still reachable
+  uint8_t parent_reach_count; // number or round, the parent didn't anwser (to know if it still reachable)
   linkaddr_t *children; // pointer to an array of linkaddr_t
   uint8_t *child_reach_count; // same as the parent_reach_count but for children
   uint16_t nb_children;
