@@ -134,17 +134,19 @@ void input_callback(const void *data, uint16_t len,
   linkaddr_copy(&src_copy, src);
   data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t
   if(data_receive->step_signal == 1 && !in_network){ // CONNECTION RESPONSE
-    in_network = 1;
-    LOG_INFO("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
-    LOG_INFO_LLADDR(&src_copy);
-    best_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
-    linkaddr_copy(&(my_node.parent), &src_copy);  //Save the parent address
-    data_to_send.node_rank = data_receive->node_rank +1;  //Save the rank as the parent rank +1
-    LOG_INFO_(" new rank: %d ; SGN 2 (ack) sent to ", data_to_send.node_rank);
-    LOG_INFO_LLADDR(&(my_node.parent));
-    LOG_INFO_("\n");
-    data_to_send.step_signal = 2; // Send an ACK to the connection
-    NETSTACK_NETWORK.output(&(my_node.parent));
+    if(my_node.nb_children==0 || (my_node.nb_children>0 && data_receive->node_rank < data_to_send.node_rank)){ //In case it search for a new parent after losing the last one
+      in_network = 1;
+      LOG_INFO("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+      LOG_INFO_LLADDR(&src_copy);
+      best_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
+      linkaddr_copy(&(my_node.parent), &src_copy);  //Save the parent address
+      data_to_send.node_rank = data_receive->node_rank +1;  //Save the rank as the parent rank +1
+      LOG_INFO_(" new rank: %d ; SGN 2 (ack) sent to ", data_to_send.node_rank);
+      LOG_INFO_LLADDR(&(my_node.parent));
+      LOG_INFO_("\n");
+      data_to_send.step_signal = 2; // Send an ACK to the connection
+      NETSTACK_NETWORK.output(&(my_node.parent));
+    }
   }
   else if(in_network){
     if(data_receive->step_signal == 0){ // CONNECTION REQUEST
