@@ -48,9 +48,13 @@ def data_treatment(data):
     node_id = data_split[0]
     node_counter = data_split[1]
 
-    # update value of node counter in the global save
-    global_counter_save[f"node_{node_id}"] = node_counter
-    #global_counter_save[f"node_{node_id}"] += node_counter
+    # Update value of node counter in the global save
+    # Create value for dictionary if not already in keys
+    if f"Node_{node_id}" not in global_counter_save.keys():
+        global_counter_save[f"Node_{node_id}"] = node_counter
+    # If already exists add to the counter
+    else:
+        global_counter_save[f"Node_{node_id}"] += node_counter
 
     # Display node id
     display_node_counter(node_id)
@@ -74,7 +78,7 @@ def display_node_counter(node_id):
     ---------
     node_id -- id of the node of which we want to display the counter (str)
     """
-    print(f"Node {node_id} -- Counter : {global_counter_save[f'node_{node_id}']}")
+    print(f"Node {node_id} -- Counter : {global_counter_save[f'Node_{node_id}']}")
 
 def save_data(data_dict, file_name):
     """
@@ -99,13 +103,13 @@ def main(ip, port, saveFile=False):
     port -- port of the device we try to reach
     saveFile -- true if there is a file with an existing save of node counters
     """
-    #save_name = "global_counter_save.json"
+    save_name = "global_counter_save.json"
 
     # Restore save from existing file
-    #if saveFile:
-    #    with open(save_name, 'r') as file:
-    #       global_counter_save = json.load(file)
-    #        display_global_counter_message()
+    if saveFile:
+        with open(save_name, 'r') as file:
+            global_counter_save = json.load(file)
+            display_global_counter_message()
 
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -125,16 +129,16 @@ def main(ip, port, saveFile=False):
             break
 
     # Save dictionnary into a file when connection fails
-    #if saveFile:
-    #    save_data(global_counter_save, save_name)
+    if saveFile:
+        save_data(global_counter_save, save_name)
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--ip", dest="ip", type=str)
     parser.add_argument("--port", dest="port", type=int)
-    #parser.add_argument("--save", dest="save", type=bool, default=False)
+    parser.add_argument("--save", dest="save", type=bool, default=False)
     args = parser.parse_args()
 
-    main(args.ip, args.port)
-    #main(args.ip, args.port, args.save)
+    #main(args.ip, args.port)
+    main(args.ip, args.port, args.save)
