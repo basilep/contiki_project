@@ -38,6 +38,10 @@ def data_treatment(data):
     ----------
     data: string with the data received
     """
+    # Make sure it is pertinent data
+    if not ',' in data:
+        return
+
     # It should split the data in 2 parts (id, counter)
     data_split = data.split(",")
     
@@ -111,9 +115,9 @@ def main(ip, port, saveFile=False):
     while True:
         try:
             data = receive(sock)
-            print(data.decode("utf-8"))
+            #print(data.decode("utf-8"))
 
-            data_treatment(data)
+            data_treatment(data.decode("utf-8"))
                 
             time.sleep(1)
         except socket.error:
