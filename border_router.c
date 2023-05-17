@@ -21,7 +21,7 @@
 /* OTHER CONFIGURATION */
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
 #define CHECK_NETWORK (5 * CLOCK_SECOND)
-#define BERKELEY_INTERVAL (4.5 * CLOCK_SECOND)
+#define BERKELEY_INTERVAL (4.9 * CLOCK_SECOND)
 
 //-------------------------------------
 
@@ -66,6 +66,9 @@ static struct ctimer timer;
 static struct ctimer check_network_timer;
 static struct ctimer berkeley_timer;
 static int best_rssi = -100;
+static int clock_compensation = 0;
+static clock_time_t *clock_array;
+static size_t clock_array_size = 0;
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -124,6 +127,50 @@ int is_better_rssi(){
   }
 }
 
+long int handle_clock(clock_time_t received_clock){
+  // initialize the memory for the array if first element
+  // update array size 
+
+  //add clock to array
+  // if lengh(array) == nb_children
+      // compute difference to each element in array
+      // compute average of differences
+      // put average in clock_compensation
+      // Border update its own clock with the difference (compensation)
+
+      // free the array memory
+  
+  // return clock
+
+  if(clock_array_size == 0){
+    clock_array = (clock_time_t*) malloc(sizeof(clock_time_t));
+  }
+  else{
+    clock_array = realloc(clock_array, (clock_array_size+1)*sizeof(clock_time_t));
+  }
+  clock_array[clock_array_size] = received_clock;
+  clock_array_size+=1;
+
+  if(clock_array_size == my_node.nb_children){
+    long int num = 0;
+  
+    for(int i=0; i<clock_array_size; i++){
+      num += (clock_time() - clock_array[i]);
+      LOG_INFO_("Ceci est le num : %ld\n", num);
+    }
+    clock_compensation = num / clock_array_size;
+
+    long int synchronized_clock = clock_time() - clock_compensation; 
+
+    free(clock_array);
+    clock_array_size = 0;
+    
+    return synchronized_clock;
+  }
+
+  return 0;
+}
+
 /* PROCESS CREATION */
 PROCESS(node_example, "Node Example");
 AUTOSTART_PROCESSES(&node_example);
@@ -174,6 +221,17 @@ void input_callback(const void *data, uint16_t len,
       LOG_INFO_(" where clock is %lu", data_receive->clock);
       LOG_INFO_(" and my clock is %lu", clock_time());
       LOG_INFO_("\n");
+
+      // function handle_clock()
+      long int synchronized_clock = handle_clock(data_receive->clock);
+      if (synchronized_clock != 0){
+        data_to_send.clock = synchronized_clock;
+        for (int i = 0; i < my_node.nb_children; i++) {
+          data_to_send.step_signal = 8;
+          NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+        }
+
+      }
     }
     else if(data_receive->step_signal> 50){
         LOG_INFO(" ");

@@ -64,6 +64,7 @@ static data_structure_t data_to_send ={
 static struct ctimer timer;
 static struct ctimer check_network_timer;
 static int best_rssi = -100;
+static int clock_compensation = 0;
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -188,14 +189,19 @@ void input_callback(const void *data, uint16_t len,
       LOG_INFO("RECEIVED CLOCK REQUEST FROM ");
       LOG_INFO_LLADDR(&src_copy);
       
-
-      data_to_send.clock = clock_time(); // get its own clock
+      data_to_send.clock = (clock_time_t)((long int) clock_time() + clock_compensation); // get its own clock
       data_to_send.step_signal = 7;
       //TODO: changer le step_signal à envoyer à 7
       LOG_INFO_(" ; My clock is %lu", data_to_send.clock);
       LOG_INFO_("\n");
       NETSTACK_NETWORK.output(&src_copy);
 
+    }
+    else if(data_receive->step_signal == 8){
+      LOG_INFO("RECEIVED NEW SYNCHRONIZED CLOCK");
+      clock_compensation = data_receive->clock - clock_time();
+      LOG_INFO_(" : %d", clock_compensation);
+      LOG_INFO_(" ; New clock: %lu\n", data_receive->clock);
     }
     else if(data_receive->step_signal> 50){
       LOG_INFO(" ");
