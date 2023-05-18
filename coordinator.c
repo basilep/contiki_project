@@ -54,6 +54,7 @@ static data_structure_t data_to_send ={
 static struct ctimer timer;
 static struct ctimer check_network_timer;
 static int clock_compensation = 0;
+static clock_time_t timeslot_array[2];
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -171,6 +172,14 @@ void input_callback(const void *data, uint16_t len,
       LOG_INFO_(" : %d", clock_compensation);
       LOG_INFO_(" ; New clock: %lu\n", data_receive->clock);
     }
+    else if(data_receive->step_signal == 9){
+      LOG_INFO("RECEIVED TIMESLOT");
+      timeslot_array[0] = data_receive->timeslot[0];
+      timeslot_array[1] = data_receive->timeslot[1];
+      timeslot_array[2] = data_receive->timeslot[2];
+
+    }
+
     else if(data_receive->step_signal> 50){
       LOG_INFO(" ");
       LOG_INFO_LLADDR(&src_copy);
@@ -244,6 +253,7 @@ PROCESS_THREAD(coordinator_process, ev, data)
 
   ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
   ctimer_set(&check_network_timer, CHECK_NETWORK, send_reachable_state, NULL);
+  ctimer_set(, TIME_WINDOW, NULL); // call for timing to send data
   while (1) {
     PROCESS_WAIT_EVENT();
   }

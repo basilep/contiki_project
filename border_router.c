@@ -21,7 +21,8 @@
 /* OTHER CONFIGURATION */
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
 #define CHECK_NETWORK (5 * CLOCK_SECOND)
-#define BERKELEY_INTERVAL (4.9 * CLOCK_SECOND)
+#define BERKELEY_INTERVAL (5 * CLOCK_SECOND)
+#define TIME_WINDOW (4 * CLOCK_SECOND)
 
 //-------------------------------------
 
@@ -37,6 +38,7 @@ typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
   clock_time_t clock;
+  clock_time_t timeslot_array [3];
 }data_structure_t;
 
 static node_t my_node = { 
@@ -100,20 +102,7 @@ void remove_child(node_t *n, linkaddr_t child) {  //Maybe free it if no children
 }
 
 long int handle_clock(clock_time_t received_clock){
-  // initialize the memory for the array if first element
-  // update array size 
-
-  //add clock to array
-  // if lengh(array) == nb_children
-      // compute difference to each element in array
-      // compute average of differences
-      // put average in clock_compensation
-      // Border update its own clock with the difference (compensation)
-
-      // free the array memory
   
-  // return clock
-
   if(clock_array_size == 0){
     clock_array = (clock_time_t*) malloc(sizeof(clock_time_t));
   }
@@ -141,6 +130,30 @@ long int handle_clock(clock_time_t received_clock){
   }
 
   return 0;
+}
+
+void timeslots_allocation(){
+  // divide the time window in equal timeslots related to the number of children
+  // define a guard time
+  // loop on children
+    // take the synchronized clock
+    // [actual clock + 0*timeslot + guard time] , [actual clock + 1*timeslot] 
+    // [actual clock + 1*timeslot + guard time] , [actual clock + 2*timeslot]
+    // [actual clock + 2*timeslot + guard time] , [actual clock + 3*timeslot]
+
+  if(my_node.nb_children > 0)[
+    int timeslot = TIME_WINDOW/my_node.nb_children;
+
+    for (int i=0; i< my_node.nb_children; i++){
+      clock_time_t synchronized_clock = clock_time() + clock_compensation;
+
+      data_to_send.timeslot[0] = synchronized_clock + i*timeslot + guard_time:
+      data_to_send.timeslot[1] = synchronized_clock + (i+1)*timeslot;
+      data_to_send.timeslot[2] = TIME_WINDOW;
+      data_to_send.step_signal = 9;
+      NETSTACK_NETWORK.output(&(my_node.children[i]));
+    }
+  ]
 }
 
 /* PROCESS CREATION */
@@ -200,6 +213,8 @@ void input_callback(const void *data, uint16_t len,
         }
 
       }
+
+      timeslots_allocation();
     }
     else if(data_receive->step_signal> 50){
         LOG_INFO(" ");
@@ -207,6 +222,7 @@ void input_callback(const void *data, uint16_t len,
         LOG_INFO_(" sent me the signal %u and ", data_receive->step_signal);
         LOG_INFO_("its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
     }
+    
 }
 
 /**/

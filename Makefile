@@ -2,7 +2,7 @@ CONTIKI_PROJECT = nullcat_training.c
 PROJECT_SOURCEFILES = realloc.c
 all: $(CONTIKI_PROJECT)
 
-CONTIKI = ../
+CONTIKI = ../..
 
 #use this to enable TSCH: MAKE_MAC = MAKE_MAC_TSCH
 MAKE_MAC ?= MAKE_MAC_CSMA
