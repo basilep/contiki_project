@@ -27,37 +27,25 @@
 
 static int in_network = 0; // Says if the node is already connected to the network ()
 
-typedef enum {
-  BORDER_ROUTER,
-  COORDINATOR,
-  SENSOR
-} node_type_t;
-
 typedef struct node {
-  linkaddr_t parent;
-  int parent_reach_count; // number or round, the parent didn't anwser (to know if it still reachable)
   linkaddr_t *children; // pointer to an array of linkaddr_t
-  int *child_reach_count; // same as the parent_reach_count but for children
+  int *child_reach_count; // number or round, the children didn't anwser (to know if they are still reachable)
   uint16_t nb_children;
 } node_t;
 
 typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
-  node_type_t node_type;
   clock_time_t clock;
 }data_structure_t;
 
 static node_t my_node = { 
-  .parent = {{0}}, // initialize all 8 bytes to 0
-  .parent_reach_count = 0,
   .children = NULL,
   .child_reach_count = NULL,
   .nb_children = 0 
 };
 
 static data_structure_t data_to_send ={
-  .node_type = BORDER_ROUTER,
   .node_rank = 0,
   .clock = 0
 };
@@ -65,7 +53,6 @@ static data_structure_t data_to_send ={
 static struct ctimer timer;
 static struct ctimer check_network_timer;
 static struct ctimer berkeley_timer;
-static int best_rssi = -100;
 static int clock_compensation = 0;
 static clock_time_t *clock_array;
 static size_t clock_array_size = 0;
@@ -109,21 +96,6 @@ void remove_child(node_t *n, linkaddr_t child) {  //Maybe free it if no children
     n->child_reach_count = realloc(n->child_reach_count, (n->nb_children - 1) * sizeof(uint8_t));
     // Decrement the number of children
     n->nb_children--;
-  }
-}
-
-/* Function to check the better rssi
-   between the current better  rssi and the last packet receive 
-   (using packetbuf_attr(PACKETBUF_ATTR_RSSI))
-   return 1 if the new rssi is better
-*/
-int is_better_rssi(){
-  LOG_INFO_(" RSSI : best = %d, current = %d ; ", best_rssi, packetbuf_attr(PACKETBUF_ATTR_RSSI));
-  if(best_rssi < packetbuf_attr(PACKETBUF_ATTR_RSSI)){
-    return 1;
-  }
-  else{
-    return 0;
   }
 }
 
@@ -172,8 +144,8 @@ long int handle_clock(clock_time_t received_clock){
 }
 
 /* PROCESS CREATION */
-PROCESS(node_example, "Node Example");
-AUTOSTART_PROCESSES(&node_example);
+PROCESS(border_router_process, "Border Router");
+AUTOSTART_PROCESSES(&border_router_process);
 
 /* CALL BACK FUNCTION WHEN MESSAGE IS RECEIVED*/
 void input_callback(const void *data, uint16_t len,
@@ -202,10 +174,6 @@ void input_callback(const void *data, uint16_t len,
         LOG_INFO_LLADDR(src);
         LOG_INFO_("\n");
         remove_child(&my_node, src_copy);
-    }
-    else if(data_receive->step_signal == 4){
-        data_to_send.step_signal = 5;
-        NETSTACK_NETWORK.output(&src_copy);
     }
     else if(data_receive->step_signal == 5){
         for (int i = 0; i < my_node.nb_children; i++) {
@@ -246,35 +214,18 @@ static void send_clock_request(void* ptr){
   ctimer_reset(&berkeley_timer);
 
   data_to_send.step_signal = 6;
-  LOG_INFO("I'm sending clock request %u to my children ", data_to_send.step_signal);
+  LOG_INFO("I'm sending clock request %u to my children : ", data_to_send.step_signal);
   for (int i = 0; i < my_node.nb_children; i++) {
-    
     LOG_INFO_LLADDR(&(my_node.children[i]));
-    LOG_INFO_(" ; child");
+    LOG_INFO_(" ; ");
     NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
   }
   LOG_INFO_("\n");
 }
 
-/* CALLBACK TO CHECK REACHABLE NODES */
+/* CALLBACK TO CHECK REACHABLE CHILDREN */
 static void send_reachable_state(void* ptr){
   ctimer_reset(&check_network_timer);
-  if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){ // Check If there is a parent
-    if(my_node.parent_reach_count>=1){
-      LOG_INFO_("Parent not reachable anymore : ");
-      LOG_INFO_LLADDR(&my_node.parent);
-      LOG_INFO_("; temporary removal\n");
-      linkaddr_copy(&my_node.parent, &linkaddr_null); //setting parent to the null address
-      my_node.parent_reach_count = -1;  //So it goes to 0 after the next increment
-      in_network = 0;
-      best_rssi=-100;
-    }
-    else{
-      data_to_send.step_signal = 4; //Aware that it's still reachable
-      NETSTACK_NETWORK.output(&my_node.parent);
-    }
-    my_node.parent_reach_count+=1;
-  }
   for (int i = 0; i < my_node.nb_children; i++) {
     if(my_node.child_reach_count[i]>1){
       LOG_INFO_(" child : ");
@@ -293,38 +244,21 @@ static void send_reachable_state(void* ptr){
 /* TIMER CALLBACK MAIN FUNCTION */
 void timer_callback(void* ptr){
   ctimer_reset(&timer);
-  if(!in_network){
-    // Not in the network at the moment -> broadcast a packet to know the neighboors
-    LOG_INFO("Node %u broadcasts SGN 0\n", node_id); //node_id return the ID of the current node
-    //LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
-    data_to_send.step_signal = 0;
-    NETSTACK_NETWORK.output(NULL);
-  }
-  else{
-    if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){
-      data_to_send.step_signal = 100;
-      LOG_INFO("I'm sending %u to my parent ", data_to_send.step_signal);
-      LOG_INFO_LLADDR(&(my_node.parent));
-      LOG_INFO_("\n");
-      data_to_send.step_signal = 100; //DEBUG
-      NETSTACK_NETWORK.output(&(my_node.parent));  // Use to sent data to the destination
+  if(my_node.nb_children > 0){        
+    data_to_send.step_signal = 150;
+    LOG_INFO("I have %u children\n", my_node.nb_children);
+    LOG_INFO("I'm sending %u to my children ", data_to_send.step_signal);
+    for(int i=0; i < my_node.nb_children; i++){
+      LOG_INFO_LLADDR(&(my_node.children[i]));
+      LOG_INFO_(" ; child");
+      NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
     }
-    if(my_node.nb_children > 0){        
-      data_to_send.step_signal = 150;
-      LOG_INFO("I have %u children\n", my_node.nb_children);
-      LOG_INFO("I'm sending %u to my children ", data_to_send.step_signal);
-      for(int i=0; i < my_node.nb_children; i++){
-        LOG_INFO_LLADDR(&(my_node.children[i]));
-        LOG_INFO_(" ; child");
-        NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
-      }
-      LOG_INFO_("\n");
-    }
+    LOG_INFO_("\n");
   }
 }
 
 /* MAIN PART PROCESS CODE */
-PROCESS_THREAD(node_example, ev, data)
+PROCESS_THREAD(border_router_process, ev, data)
 {
   
   if(!in_network){
@@ -336,7 +270,7 @@ PROCESS_THREAD(node_example, ev, data)
 
   /* Initialize NullNet */
   nullnet_buf = (uint8_t *)&data_to_send;
-  nullnet_len = sizeof(data_to_send); //PUT IT EVERYTIME IT CHANGES ??
+  nullnet_len = sizeof(data_structure_t);
   nullnet_set_input_callback(input_callback);
 
   ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);

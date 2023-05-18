@@ -24,12 +24,6 @@
 
 static int in_network = 0; // Says if the node is already connected to the network ()
 
-typedef enum {
-  BORDER_ROUTER,
-  COORDINATOR,
-  SENSOR
-} node_type_t;
-
 typedef struct node {
   linkaddr_t parent;
   int parent_reach_count; // number or round, the parent didn't anwser (to know if it still reachable)
@@ -41,7 +35,6 @@ typedef struct node {
 typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
-  node_type_t node_type;
 }data_structure_t;
 
 static node_t my_node = { 
@@ -53,7 +46,6 @@ static node_t my_node = {
 };
 
 static data_structure_t data_to_send ={
-  .node_type = SENSOR,
   .node_rank = -1
 };
 
@@ -119,8 +111,8 @@ int is_better_rssi(){
 }
 
 /* PROCESS CREATION */
-PROCESS(node_example, "Node Example");
-AUTOSTART_PROCESSES(&node_example);
+PROCESS(sensor_process, "Sensor node");
+AUTOSTART_PROCESSES(&sensor_process);
 
 /* CALL BACK FUNCTION WHEN MESSAGE IS RECEIVED*/
 void input_callback(const void *data, uint16_t len,
@@ -128,11 +120,12 @@ void input_callback(const void *data, uint16_t len,
 {
   linkaddr_t src_copy;  // Need to do a copy, to prevent problems if src is changing during the execution
   linkaddr_copy(&src_copy, src);
-  data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t
+  data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t      
   if(data_receive->step_signal == 1 && !in_network){ // CONNECTION RESPONSE
     if(my_node.nb_children==0 || (my_node.nb_children>0 && data_receive->node_rank < data_to_send.node_rank)){ //In case it search for a new parent after losing the last one
-      // Check 1) if coordinator ; 2) if first node to respond ; 3) if no coordinator, its mandatory that the parent is a sensor (rank 2 minimum)
-      if(data_receive->node_rank == 1 || data_to_send.node_rank==-1 || (data_receive->node_rank > 1 && data_to_send.node_rank > 2 && data_receive->node_rank < data_to_send.node_rank)){
+      // Check 1)  if first node to respond ; 2) if coordinator ; 3) if no coordinator, its mandatory that the parent is a sensor (rank 2 minimum)
+
+      if(data_to_send.node_rank == -1 || data_receive->node_rank== 1 || (data_receive->node_rank > 1 && data_to_send.node_rank > 2 && data_receive->node_rank < data_to_send.node_rank)){
         in_network = 1;
         LOG_INFO("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
         LOG_INFO_LLADDR(&src_copy);
@@ -159,11 +152,19 @@ void input_callback(const void *data, uint16_t len,
     }
     else if(data_receive->step_signal == 1 && !linkaddr_cmp(&(my_node.parent), &linkaddr_null)){  //Also check if there is a parent
       if(data_receive->node_rank == 1 || (data_receive->node_rank > 1 && data_to_send.node_rank > 2 && data_receive->node_rank < data_to_send.node_rank)){
-        LOG_INFO("SGN 1 received from ");      
+        LOG_INFO("SGN 1 received from ");
         LOG_INFO_LLADDR(&src_copy);
         LOG_INFO_(" ; let's check rssi ;");
       
         if(is_better_rssi()){
+          // If rank has changed, aware its children to change their rank
+          if(data_to_send.node_rank != data_receive->node_rank+1){
+            data_to_send.node_rank = data_receive->node_rank +1;
+            data_to_send.step_signal = 9; // TODO CHANGE?
+            for (int i = 0; i < my_node.nb_children; i++) {
+                NETSTACK_NETWORK.output(&(my_node.children[i]));  //reset its count
+            }
+          }
           data_to_send.node_rank = data_receive->node_rank +1;  //Change rank
           data_to_send.step_signal = 3; // aware the parent the he found a new better node, to delete it from its list
           LOG_INFO_(" SEND SGN 3 to ");
@@ -209,6 +210,15 @@ void input_callback(const void *data, uint16_t len,
         }
       }
     }
+    else if(data_receive->step_signal == 9){
+      if(my_node.nb_children>0){
+        data_to_send.node_rank = data_receive->node_rank +1;
+        data_to_send.step_signal = 9; // TODO CHANGE?
+        for (int i = 0; i < my_node.nb_children; i++) {
+            NETSTACK_NETWORK.output(&(my_node.children[i]));  //reset its count
+        }
+      }
+    }
     else if(data_receive->step_signal> 50){
       LOG_INFO(" ");
       LOG_INFO_LLADDR(&src_copy);
@@ -240,13 +250,13 @@ static void send_reachable_state(void* ptr){
   for (int i = 0; i < my_node.nb_children; i++) {
     if(my_node.child_reach_count[i]>=1){
       LOG_INFO_(" child : ");
-      LOG_INFO_LLADDR(&my_node.children[i]);
+      LOG_INFO_LLADDR(&(my_node.children[i]));
       LOG_INFO_("not reachable anymore\n");
       remove_child(&my_node, my_node.children[i]);
     }
     else{
       data_to_send.step_signal = 4; //Aware that it's still reachable
-      NETSTACK_NETWORK.output(&my_node.children[i]);
+      NETSTACK_NETWORK.output(&(my_node.children[i]));
     }
     my_node.child_reach_count[i] +=1;
   }
@@ -286,14 +296,14 @@ void timer_callback(void* ptr){
 }
 
 /* MAIN PART PROCESS CODE */
-PROCESS_THREAD(node_example, ev, data)
+PROCESS_THREAD(sensor_process, ev, data)
 {
 
   PROCESS_BEGIN();
 
   /* Initialize NullNet */
   nullnet_buf = (uint8_t *)&data_to_send;
-  nullnet_len = sizeof(data_to_send); //PUT IT EVERYTIME IT CHANGES ??
+  nullnet_len = sizeof(data_structure_t);
   nullnet_set_input_callback(input_callback);
 
   ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
