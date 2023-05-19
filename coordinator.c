@@ -21,6 +21,7 @@
 /* OTHER CONFIGURATION */
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
 #define CHECK_NETWORK (5 * CLOCK_SECOND)
+#define TIME_WINDOW (2 * CLOCK_SECOND)
 
 //-------------------------------------
 
@@ -37,6 +38,7 @@ typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
   clock_time_t clock;
+  clock_time_t timeslot_array [2];
 }data_structure_t;
 
 static node_t my_node = { 
@@ -48,13 +50,14 @@ static node_t my_node = {
 
 static data_structure_t data_to_send ={
   .node_rank = 1,
-  .clock = 0
+  .clock = 0,
+  .timeslot_array = {0, 0}
 };
 
 static struct ctimer timer;
 static struct ctimer check_network_timer;
+static struct ctimer get_sensor_data_timer;
 static int clock_compensation = 0;
-static clock_time_t timeslot_array[2];
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -174,9 +177,10 @@ void input_callback(const void *data, uint16_t len,
     }
     else if(data_receive->step_signal == 9){
       LOG_INFO("RECEIVED TIMESLOT");
-      timeslot_array[0] = data_receive->timeslot[0];
-      timeslot_array[1] = data_receive->timeslot[1];
-      timeslot_array[2] = data_receive->timeslot[2];
+      data_to_send.timeslot_array[0] = data_receive->timeslot_array[0];
+      data_to_send.timeslot_array[1] = data_receive->timeslot_array[1];
+      LOG_INFO("Timseslots : 1) %lu ; 2) %lu : \n", data_to_send.timeslot_array[0],data_to_send.timeslot_array[1]);
+
 
     }
 
@@ -188,6 +192,20 @@ void input_callback(const void *data, uint16_t len,
     }
   }
 } 
+
+static void get_sensor_data(void* ptr){
+  ctimer_reset(&get_sensor_data_timer);
+  if(data_to_send.timeslot_array[1] != 0){
+    //LOG_INFO("Current Clock : %lu ; TIME WINDOWS : %lu\n", (clock_time() + clock_compensation), TIME_WINDOW);
+    if((clock_time() + clock_compensation)>data_to_send.timeslot_array[0] && (clock_time() + clock_compensation)<data_to_send.timeslot_array[1]){
+      LOG_INFO("My turn\n");
+    }
+    else if((clock_time() + clock_compensation)>data_to_send.timeslot_array[1]){  //If the timeslot is already passed, addition it to the time windows
+      data_to_send.timeslot_array[0]+=TIME_WINDOW;
+      data_to_send.timeslot_array[1]+=TIME_WINDOW;
+    }
+  }
+}
 
 /* CALLBACK TO CHECK REACHABLE NODES */
 static void send_reachable_state(void* ptr){
@@ -218,6 +236,7 @@ void timer_callback(void* ptr){
     NETSTACK_NETWORK.output(NULL);
   }
   else{
+    /*
     if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){
       data_to_send.step_signal = 100;
       LOG_INFO("I'm sending %u to my parent ", data_to_send.step_signal);
@@ -225,7 +244,7 @@ void timer_callback(void* ptr){
       LOG_INFO_("\n");
       data_to_send.step_signal = 100; //DEBUG
       NETSTACK_NETWORK.output(&(my_node.parent));  // Use to sent data to the destination
-    }
+    }*/
     if(my_node.nb_children > 0){        
       data_to_send.step_signal = 150;
       LOG_INFO("I have %u children\n", my_node.nb_children);
@@ -253,7 +272,7 @@ PROCESS_THREAD(coordinator_process, ev, data)
 
   ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
   ctimer_set(&check_network_timer, CHECK_NETWORK, send_reachable_state, NULL);
-  ctimer_set(, TIME_WINDOW, NULL); // call for timing to send data
+  ctimer_set(&get_sensor_data_timer, TIME_WINDOW/10, get_sensor_data, NULL); // call for timing to send data
   while (1) {
     PROCESS_WAIT_EVENT();
   }

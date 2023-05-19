@@ -22,7 +22,7 @@
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
 #define CHECK_NETWORK (5 * CLOCK_SECOND)
 #define BERKELEY_INTERVAL (5 * CLOCK_SECOND)
-#define TIME_WINDOW (4 * CLOCK_SECOND)
+#define TIME_WINDOW (2 * CLOCK_SECOND)
 
 //-------------------------------------
 
@@ -38,7 +38,7 @@ typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
   clock_time_t clock;
-  clock_time_t timeslot_array [3];
+  clock_time_t timeslot_array [2];
 }data_structure_t;
 
 static node_t my_node = { 
@@ -52,7 +52,7 @@ static data_structure_t data_to_send ={
   .clock = 0
 };
 
-static struct ctimer timer;
+//static struct ctimer timer;
 static struct ctimer check_network_timer;
 static struct ctimer berkeley_timer;
 static int clock_compensation = 0;
@@ -117,7 +117,7 @@ long int handle_clock(clock_time_t received_clock){
   
     for(int i=0; i<clock_array_size; i++){
       num += (clock_time() - clock_array[i]);
-      LOG_INFO_("Ceci est le num : %ld\n", num);
+      //LOG_INFO_("Ceci est le num : %ld\n", num);
     }
     clock_compensation = num / clock_array_size;
 
@@ -141,19 +141,17 @@ void timeslots_allocation(){
     // [actual clock + 1*timeslot + guard time] , [actual clock + 2*timeslot]
     // [actual clock + 2*timeslot + guard time] , [actual clock + 3*timeslot]
 
-  if(my_node.nb_children > 0)[
+  if(my_node.nb_children > 0){
     int timeslot = TIME_WINDOW/my_node.nb_children;
 
     for (int i=0; i< my_node.nb_children; i++){
       clock_time_t synchronized_clock = clock_time() + clock_compensation;
-
-      data_to_send.timeslot[0] = synchronized_clock + i*timeslot + guard_time:
-      data_to_send.timeslot[1] = synchronized_clock + (i+1)*timeslot;
-      data_to_send.timeslot[2] = TIME_WINDOW;
+      data_to_send.timeslot_array[0] = synchronized_clock + i*timeslot + TIME_WINDOW/20;  // + guardtime
+      data_to_send.timeslot_array[1] = synchronized_clock + (i+1)*timeslot;
       data_to_send.step_signal = 9;
       NETSTACK_NETWORK.output(&(my_node.children[i]));
     }
-  ]
+  }
 }
 
 /* PROCESS CREATION */
@@ -257,7 +255,7 @@ static void send_reachable_state(void* ptr){
   }
 }
 
-/* TIMER CALLBACK MAIN FUNCTION */
+/* TIMER CALLBACK MAIN FUNCTION 
 void timer_callback(void* ptr){
   ctimer_reset(&timer);
   if(my_node.nb_children > 0){        
@@ -271,7 +269,7 @@ void timer_callback(void* ptr){
     }
     LOG_INFO_("\n");
   }
-}
+}*/
 
 /* MAIN PART PROCESS CODE */
 PROCESS_THREAD(border_router_process, ev, data)
@@ -289,7 +287,7 @@ PROCESS_THREAD(border_router_process, ev, data)
   nullnet_len = sizeof(data_structure_t);
   nullnet_set_input_callback(input_callback);
 
-  ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
+  //ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
   ctimer_set(&check_network_timer, CHECK_NETWORK, send_reachable_state, NULL);
   ctimer_set(&berkeley_timer, BERKELEY_INTERVAL, send_clock_request , NULL);
   while (1) {
