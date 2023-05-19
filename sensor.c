@@ -35,6 +35,7 @@ typedef struct node {
 typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
+  uint8_t data [2]; //ID, DATA
 }data_structure_t;
 
 static node_t my_node = { 
@@ -219,11 +220,24 @@ void input_callback(const void *data, uint16_t len,
         }
       }
     }
-    else if(data_receive->step_signal> 50){
-      LOG_INFO(" ");
-      LOG_INFO_LLADDR(&src_copy);
-      LOG_INFO_(" sent me the signal %u and ", data_receive->step_signal);
-      LOG_INFO_("its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+    else if(data_receive->step_signal == 11){
+      for(int i=0; i < my_node.nb_children; i++){
+        data_to_send.step_signal = 11;
+        NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+      }
+      srand(clock_time());
+      if(abs(rand()%6)==1){ //chose a random number between 1 and 5 to get a probability of 20% to send a data
+        data_to_send.data[0] = node_id;
+        data_to_send.data[1] = abs(rand()%101); // between 1 and 100
+        data_to_send.step_signal = 12;
+        NETSTACK_NETWORK.output(&src_copy);
+      }
+    }
+    else if(data_receive->step_signal == 12){
+      data_to_send.data[0] = data_receive->data[0];
+      data_to_send.data[1] = data_receive->data[1];
+      data_to_send.step_signal = 12;
+      NETSTACK_NETWORK.output(&(my_node.parent));
     }
   }
 } 
@@ -249,9 +263,9 @@ static void send_reachable_state(void* ptr){
   }
   for (int i = 0; i < my_node.nb_children; i++) {
     if(my_node.child_reach_count[i]>=1){
-      LOG_INFO_(" child : ");
+      LOG_INFO_("Child : ");
       LOG_INFO_LLADDR(&(my_node.children[i]));
-      LOG_INFO_("not reachable anymore\n");
+      LOG_INFO_(" not reachable anymore\n");
       remove_child(&my_node, my_node.children[i]);
     }
     else{
@@ -271,27 +285,6 @@ void timer_callback(void* ptr){
     //LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
     data_to_send.step_signal = 0;
     NETSTACK_NETWORK.output(NULL);
-  }
-  else{
-    if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){
-      data_to_send.step_signal = 100;
-      LOG_INFO("I'm sending %u to my parent ", data_to_send.step_signal);
-      LOG_INFO_LLADDR(&(my_node.parent));
-      LOG_INFO_("\n");
-      data_to_send.step_signal = 100; //DEBUG
-      NETSTACK_NETWORK.output(&(my_node.parent));  // Use to sent data to the destination
-    }
-    if(my_node.nb_children > 0){        
-      data_to_send.step_signal = 150;
-      LOG_INFO("I have %u children\n", my_node.nb_children);
-      LOG_INFO("I'm sending %u to my children ", data_to_send.step_signal);
-      for(int i=0; i < my_node.nb_children; i++){
-        LOG_INFO_LLADDR(&(my_node.children[i]));
-        LOG_INFO_(" ; child");
-        NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
-      }
-      LOG_INFO_("\n");
-    }
   }
 }
 

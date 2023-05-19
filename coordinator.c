@@ -37,6 +37,7 @@ typedef struct node {
 typedef struct data_structure{
   uint8_t step_signal;
   int node_rank;
+  uint8_t data[2];
   clock_time_t clock;
   clock_time_t timeslot_array [2];
 }data_structure_t;
@@ -58,6 +59,9 @@ static struct ctimer timer;
 static struct ctimer check_network_timer;
 static struct ctimer get_sensor_data_timer;
 static int clock_compensation = 0;
+
+//Variable to LOG when it's the turn of the coordinator
+static uint8_t coord_turn = 0;
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -158,37 +162,35 @@ void input_callback(const void *data, uint16_t len,
       }
     }
     else if(data_receive->step_signal == 6){
-      LOG_INFO("RECEIVED CLOCK REQUEST FROM ");
-      LOG_INFO_LLADDR(&src_copy);
+      //LOG_INFO("RECEIVED CLOCK REQUEST FROM ");
+      //LOG_INFO_LLADDR(&src_copy);
       
       data_to_send.clock = (clock_time_t)((long int) clock_time() + clock_compensation); // get its own clock
       data_to_send.step_signal = 7;
       //TODO: changer le step_signal à envoyer à 7
-      LOG_INFO_(" ; My clock is %lu", data_to_send.clock);
-      LOG_INFO_("\n");
+      //LOG_INFO_(" ; My clock is %lu", data_to_send.clock);
+      //LOG_INFO_("\n");
       NETSTACK_NETWORK.output(&src_copy);
 
     }
     else if(data_receive->step_signal == 8){
-      LOG_INFO("RECEIVED NEW SYNCHRONIZED CLOCK");
+      //LOG_INFO("RECEIVED NEW SYNCHRONIZED CLOCK");
       clock_compensation = data_receive->clock - clock_time();
-      LOG_INFO_(" : %d", clock_compensation);
-      LOG_INFO_(" ; New clock: %lu\n", data_receive->clock);
+      //LOG_INFO_(" : %d", clock_compensation);
+      //LOG_INFO_(" ; New clock: %lu\n", data_receive->clock);
     }
     else if(data_receive->step_signal == 9){
-      LOG_INFO("RECEIVED TIMESLOT");
+      //LOG_INFO("RECEIVED TIMESLOT");
       data_to_send.timeslot_array[0] = data_receive->timeslot_array[0];
       data_to_send.timeslot_array[1] = data_receive->timeslot_array[1];
-      LOG_INFO("Timseslots : 1) %lu ; 2) %lu : \n", data_to_send.timeslot_array[0],data_to_send.timeslot_array[1]);
-
-
+      //LOG_INFO("Timseslots : 1) %lu ; 2) %lu : \n", data_to_send.timeslot_array[0],data_to_send.timeslot_array[1]);
     }
-
-    else if(data_receive->step_signal> 50){
-      LOG_INFO(" ");
-      LOG_INFO_LLADDR(&src_copy);
-      LOG_INFO_(" sent me the signal %u and ", data_receive->step_signal);
-      LOG_INFO_("its rssi is %d : \n",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+    else if(data_receive->step_signal == 12){
+      data_to_send.data[0] = data_receive->data[0];
+      data_to_send.data[1] = data_receive->data[1];
+      //LOG_INFO("RECEIVE DATA FROM NODE %d : %d\n", data_to_send.data[0], data_to_send.data[1]);
+      data_to_send.step_signal = 12;
+      NETSTACK_NETWORK.output(&(my_node.parent));
     }
   }
 } 
@@ -198,11 +200,19 @@ static void get_sensor_data(void* ptr){
   if(data_to_send.timeslot_array[1] != 0){
     //LOG_INFO("Current Clock : %lu ; TIME WINDOWS : %lu\n", (clock_time() + clock_compensation), TIME_WINDOW);
     if((clock_time() + clock_compensation)>data_to_send.timeslot_array[0] && (clock_time() + clock_compensation)<data_to_send.timeslot_array[1]){
-      LOG_INFO("My turn\n");
+      if(coord_turn == 0){
+        //LOG_INFO("MY TIMESLOT\n");
+        coord_turn = 1;
+      }
+      for(int i=0; i < my_node.nb_children; i++){
+        data_to_send.step_signal = 11;
+        NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+      }
     }
     else if((clock_time() + clock_compensation)>data_to_send.timeslot_array[1]){  //If the timeslot is already passed, addition it to the time windows
       data_to_send.timeslot_array[0]+=TIME_WINDOW;
       data_to_send.timeslot_array[1]+=TIME_WINDOW;
+      coord_turn=0;
     }
   }
 }
@@ -227,37 +237,15 @@ static void send_reachable_state(void* ptr){
 
 /* TIMER CALLBACK MAIN FUNCTION */
 void timer_callback(void* ptr){
-  ctimer_reset(&timer);
   if(!in_network){
+    ctimer_reset(&timer);
     // Not in the network at the moment -> broadcast a packet to know the neighboors
     LOG_INFO("Node %u broadcasts SGN 0\n", node_id); //node_id return the ID of the current node
-    //LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
     data_to_send.step_signal = 0;
     NETSTACK_NETWORK.output(NULL);
   }
-  else{
-    /*
-    if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){
-      data_to_send.step_signal = 100;
-      LOG_INFO("I'm sending %u to my parent ", data_to_send.step_signal);
-      LOG_INFO_LLADDR(&(my_node.parent));
-      LOG_INFO_("\n");
-      data_to_send.step_signal = 100; //DEBUG
-      NETSTACK_NETWORK.output(&(my_node.parent));  // Use to sent data to the destination
-    }*/
-    if(my_node.nb_children > 0){        
-      data_to_send.step_signal = 150;
-      LOG_INFO("I have %u children\n", my_node.nb_children);
-      LOG_INFO("I'm sending %u to my children ", data_to_send.step_signal);
-      for(int i=0; i < my_node.nb_children; i++){
-        LOG_INFO_LLADDR(&(my_node.children[i]));
-        LOG_INFO_(" ; child");
-        NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
-      }
-      LOG_INFO_("\n");
-    }
-  }
 }
+
 
 /* MAIN PART PROCESS CODE */
 PROCESS_THREAD(coordinator_process, ev, data)
@@ -273,6 +261,7 @@ PROCESS_THREAD(coordinator_process, ev, data)
   ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
   ctimer_set(&check_network_timer, CHECK_NETWORK, send_reachable_state, NULL);
   ctimer_set(&get_sensor_data_timer, TIME_WINDOW/10, get_sensor_data, NULL); // call for timing to send data
+
   while (1) {
     PROCESS_WAIT_EVENT();
   }
