@@ -190,7 +190,7 @@ void input_callback(const void *data, uint16_t len,
     }
     else if(data_receive->step_signal == 3){  // REMOVE CHILDREN
       LOG_INFO("RECEIVED CHILD TO REMOVE from ");
-      LOG_INFO_LLADDR(src_copy);
+      LOG_INFO_LLADDR(&src_copy);
       LOG_INFO_("\n");
       remove_child(&my_node, src_copy);
     }
