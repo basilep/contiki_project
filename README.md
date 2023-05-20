@@ -21,4 +21,4 @@ And *port_nb* is the port of the serial socket of the border router
 
 In my case, the command was ***python3 ./server.py --ip 172.17.0.2 --port 60001***
 
-Then you can launch the simulation!
+Then you can launch the simulation in cooja!
