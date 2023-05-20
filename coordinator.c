@@ -197,9 +197,8 @@ void input_callback(const void *data, uint16_t len,
 static void get_sensor_data(void* ptr){
   ctimer_reset(&get_sensor_data_timer);
   if(data_to_send.timeslot_array[1] != 0){
-    LOG_DBG("Current Clock : %lu ; TIME WINDOWS : %lu\n", (clock_time() + clock_compensation), TIME_WINDOW);
+    //Check if the current "synchronised" clock is in the allocated time slot
     if((clock_time() + clock_compensation)>data_to_send.timeslot_array[0] && (clock_time() + clock_compensation)<data_to_send.timeslot_array[1]){
-      //Time slot of the coordinator
       for(int i=0; i < my_node.nb_children; i++){ //Notify the children to send data if they have any
         data_to_send.step_signal = 11;
         NETSTACK_NETWORK.output(&(my_node.children[i]));
