@@ -119,9 +119,9 @@ def main(ip, port, saveFile=False):
     while True:
         try:
             data = receive(sock)
-            #print(data.decode("utf-8"))
+            print(data.decode("utf-8"))
 
-            data_treatment(data.decode("utf-8"))
+            #data_treatment(data.decode("utf-8"))
                 
             time.sleep(1)
         except socket.error:
