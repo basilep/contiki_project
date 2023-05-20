@@ -39,9 +39,10 @@ def data_treatment(data):
     data: string with the data received
     """
     # Make sure it is pertinent data
-    if not ',' in data:
+    if not ',' in data or data[:9] != "magic2023":
         return
 
+    data = data.split("-")[1]
     # It should split the data in 2 parts (id, counter)
     data_split = data.split(",")
     
@@ -51,10 +52,10 @@ def data_treatment(data):
     # Update value of node counter in the global save
     # Create value for dictionary if not already in keys
     if f"Node_{node_id}" not in global_counter_save.keys():
-        global_counter_save[f"Node_{node_id}"] = node_counter
+        global_counter_save[f"Node_{node_id}"] = int(node_counter)
     # If already exists add to the counter
     else:
-        global_counter_save[f"Node_{node_id}"] += node_counter
+        global_counter_save[f"Node_{node_id}"] += int(node_counter)
 
     # Display node id
     display_node_counter(node_id)
@@ -119,11 +120,11 @@ def main(ip, port, saveFile=False):
     while True:
         try:
             data = receive(sock)
-            print(data.decode("utf-8"))
+            #print(data.decode("utf-8"))
 
-            #data_treatment(data.decode("utf-8"))
+            data_treatment(data.decode("utf-8"))
                 
-            time.sleep(1)
+            time.sleep(0.1)
         except socket.error:
             print("Connection closed.")
             break

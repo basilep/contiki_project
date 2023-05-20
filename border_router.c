@@ -154,6 +154,7 @@ void input_callback(const void *data, uint16_t len,
       data_to_send.data[0] = data_receive->data[0];
       data_to_send.data[1] = data_receive->data[1];
       LOG_INFO("RECEIVE DATA FROM NODE %d : %d\n", data_to_send.data[0], data_to_send.data[1]);
+      printf("magic2023-%d,%d\n",data_to_send.data[0], data_to_send.data[1]); //Send data to the server
     }
 }
 
