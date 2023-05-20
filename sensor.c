@@ -22,12 +22,13 @@
 
 //-------------------------------------
 
-static int in_network = 0; // Says if the node is already connected to the network ()
+static int in_network = 0; // Says if the node is already connected to the network
 
+// ROUTING TABLE
 typedef struct node {
   linkaddr_t parent;
   int parent_reach_count; // number or round, the parent didn't anwser (to know if it still reachable)
-  linkaddr_t *children; // pointer to an array of linkaddr_t
+  linkaddr_t *children;
   int *child_reach_count; // same as the parent_reach_count but for children
   uint16_t nb_children;
 } node_t;
@@ -61,18 +62,16 @@ void add_child(node_t *n, linkaddr_t child) {
   }
   else{
     // Allocate memory for one additional child
-    n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));   //-> is used to access the element of a struct through a pointer
+    n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));
     n->child_reach_count = realloc(n->child_reach_count, (n->nb_children+1)*sizeof(int));
   }
   // Copy the new child's address into the new memory location
   linkaddr_copy(&n->children[n->nb_children], &child);
   n->child_reach_count[n->nb_children] = 0;
-
-  // Increment the number of children
   n->nb_children++;
 }
 
-void remove_child(node_t *n, linkaddr_t child) {  //Maybe free it if no children anymore?
+void remove_child(node_t *n, linkaddr_t child) {
   // Search for the index of the child in the array
   int i;
   for (i = 0; i < n->nb_children; i++) {
@@ -91,7 +90,6 @@ void remove_child(node_t *n, linkaddr_t child) {  //Maybe free it if no children
     // Deallocate the memory for the last element in the array
     n->children = realloc(n->children, (n->nb_children - 1) * sizeof(linkaddr_t));
     n->child_reach_count = realloc(n->child_reach_count, (n->nb_children - 1) * sizeof(uint8_t));
-    // Decrement the number of children
     n->nb_children--;
   }
 }
@@ -161,9 +159,9 @@ void input_callback(const void *data, uint16_t len,
           // If rank has changed, aware its children to change their rank
           if(data_to_send.node_rank != data_receive->node_rank+1){
             data_to_send.node_rank = data_receive->node_rank +1;
-            data_to_send.step_signal = 9; // TODO CHANGE?
+            data_to_send.step_signal = 10;
             for (int i = 0; i < my_node.nb_children; i++) {
-                NETSTACK_NETWORK.output(&(my_node.children[i]));  //reset its count
+                NETSTACK_NETWORK.output(&(my_node.children[i]));
             }
           }
           data_to_send.node_rank = data_receive->node_rank +1;  //Change rank
@@ -192,15 +190,15 @@ void input_callback(const void *data, uint16_t len,
     }
     else if(data_receive->step_signal == 3){  // REMOVE CHILDREN
       LOG_INFO("RECEIVED CHILD TO REMOVE from ");
-      LOG_INFO_LLADDR(src);
+      LOG_INFO_LLADDR(src_copy);
       LOG_INFO_("\n");
       remove_child(&my_node, src_copy);
     }
-    else if(data_receive->step_signal == 4){
+    else if(data_receive->step_signal == 4){  // NODE AVAILABILITY CHECK
       data_to_send.step_signal = 5;
       NETSTACK_NETWORK.output(&src_copy);
     }
-    else if(data_receive->step_signal == 5){
+    else if(data_receive->step_signal == 5){  // NODE AVAILABILITY RECEIVE
       if (linkaddr_cmp(&my_node.parent, &src_copy)) {
         my_node.parent_reach_count=0;
       }   
@@ -211,19 +209,19 @@ void input_callback(const void *data, uint16_t len,
         }
       }
     }
-    else if(data_receive->step_signal == 9){
+    else if(data_receive->step_signal == 10){
       if(my_node.nb_children>0){
         data_to_send.node_rank = data_receive->node_rank +1;
-        data_to_send.step_signal = 9; // TODO CHANGE?
+        data_to_send.step_signal = 10;
         for (int i = 0; i < my_node.nb_children; i++) {
-            NETSTACK_NETWORK.output(&(my_node.children[i]));  //reset its count
+            NETSTACK_NETWORK.output(&(my_node.children[i])); 
         }
       }
     }
     else if(data_receive->step_signal == 11){
       for(int i=0; i < my_node.nb_children; i++){
         data_to_send.step_signal = 11;
-        NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+        NETSTACK_NETWORK.output(&(my_node.children[i]));
       }
       srand(clock_time());
       if(abs(rand()%6)==1){ //chose a random number between 1 and 5 to get a probability of 20% to send a data
@@ -233,7 +231,7 @@ void input_callback(const void *data, uint16_t len,
         NETSTACK_NETWORK.output(&src_copy);
       }
     }
-    else if(data_receive->step_signal == 12){
+    else if(data_receive->step_signal == 12){ //Send data from here to root by sending any step_signal = 12 to the parent
       data_to_send.data[0] = data_receive->data[0];
       data_to_send.data[1] = data_receive->data[1];
       data_to_send.step_signal = 12;
@@ -242,8 +240,8 @@ void input_callback(const void *data, uint16_t len,
   }
 } 
 
-/* CALLBACK TO CHECK REACHABLE NODES */
-static void send_reachable_state(void* ptr){
+/* CALLBACK TO CHECK AVAILABLE NODES */
+static void get_node_availability(void* ptr){
   ctimer_reset(&check_network_timer);
   if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){ // Check If there is a parent
     if(my_node.parent_reach_count>=1){
@@ -276,13 +274,12 @@ static void send_reachable_state(void* ptr){
   }
 }
 
-/* TIMER CALLBACK MAIN FUNCTION */
-void timer_callback(void* ptr){
+/* CONNECTION TO NETWORK */
+void get_in_network(void* ptr){
   ctimer_reset(&timer);
   if(!in_network){
     // Not in the network at the moment -> broadcast a packet to know the neighboors
     LOG_INFO("Node %u broadcasts SGN 0\n", node_id); //node_id return the ID of the current node
-    //LOG_INFO_("\t\tI'm the type %u of mote\n", my_node.type);
     data_to_send.step_signal = 0;
     NETSTACK_NETWORK.output(NULL);
   }
@@ -299,8 +296,8 @@ PROCESS_THREAD(sensor_process, ev, data)
   nullnet_len = sizeof(data_structure_t);
   nullnet_set_input_callback(input_callback);
 
-  ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
-  ctimer_set(&check_network_timer, CHECK_NETWORK, send_reachable_state, NULL);
+  ctimer_set(&timer, SEND_INTERVAL, get_in_network, NULL);
+  ctimer_set(&check_network_timer, CHECK_NETWORK, get_node_availability, NULL);
   while (1) {
     PROCESS_WAIT_EVENT();
   }

@@ -27,10 +27,11 @@
 
 static int in_network = 0; // Says if the node is already connected to the network ()
 
+// ROUTING TABLE
 typedef struct node {
   linkaddr_t parent;  
-  linkaddr_t *children; // pointer to an array of linkaddr_t
-  int *child_reach_count; // number or round, the children didn't anwser (to know if they are still reachable)
+  linkaddr_t *children; 
+  int *child_reach_count; // number or round, the children didn't anwser (to know if they are still available)
   uint16_t nb_children;
 } node_t;
 
@@ -59,9 +60,6 @@ static struct ctimer timer;
 static struct ctimer check_network_timer;
 static struct ctimer get_sensor_data_timer;
 static int clock_compensation = 0;
-
-//Variable to LOG when it's the turn of the coordinator
-static uint8_t coord_turn = 0;
 
 void add_child(node_t *n, linkaddr_t child) {
   if(n->nb_children == 0){
@@ -200,29 +198,25 @@ static void get_sensor_data(void* ptr){
   if(data_to_send.timeslot_array[1] != 0){
     //LOG_INFO("Current Clock : %lu ; TIME WINDOWS : %lu\n", (clock_time() + clock_compensation), TIME_WINDOW);
     if((clock_time() + clock_compensation)>data_to_send.timeslot_array[0] && (clock_time() + clock_compensation)<data_to_send.timeslot_array[1]){
-      if(coord_turn == 0){
-        //LOG_INFO("MY TIMESLOT\n");
-        coord_turn = 1;
-      }
-      for(int i=0; i < my_node.nb_children; i++){
+      //Time slot of the coordinator
+      for(int i=0; i < my_node.nb_children; i++){ //Notify the children to send data if they have any
         data_to_send.step_signal = 11;
-        NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+        NETSTACK_NETWORK.output(&(my_node.children[i]));
       }
     }
     else if((clock_time() + clock_compensation)>data_to_send.timeslot_array[1]){  //If the timeslot is already passed, addition it to the time windows
       data_to_send.timeslot_array[0]+=TIME_WINDOW;
       data_to_send.timeslot_array[1]+=TIME_WINDOW;
-      coord_turn=0;
     }
   }
 }
 
 /* CALLBACK TO CHECK REACHABLE NODES */
-static void send_reachable_state(void* ptr){
+static void get_node_availability(void* ptr){
   ctimer_reset(&check_network_timer);
   for (int i = 0; i < my_node.nb_children; i++) {
     if(my_node.child_reach_count[i]>=1){
-      LOG_INFO_(" child : ");
+      LOG_INFO_("Child : ");
       LOG_INFO_LLADDR(&(my_node.children[i]));
       LOG_INFO_("not reachable anymore\n");
       remove_child(&my_node, my_node.children[i]);
@@ -235,12 +229,12 @@ static void send_reachable_state(void* ptr){
   }
 }
 
-/* TIMER CALLBACK MAIN FUNCTION */
-void timer_callback(void* ptr){
+/* CONNECTION TO NETWORK */
+void get_in_network(void* ptr){
   if(!in_network){
     ctimer_reset(&timer);
     // Not in the network at the moment -> broadcast a packet to know the neighboors
-    LOG_INFO("Node %u broadcasts SGN 0\n", node_id); //node_id return the ID of the current node
+    LOG_INFO("Node %u broadcasts SGN 0\n", node_id);
     data_to_send.step_signal = 0;
     NETSTACK_NETWORK.output(NULL);
   }
@@ -258,9 +252,9 @@ PROCESS_THREAD(coordinator_process, ev, data)
   nullnet_len = sizeof(data_structure_t);
   nullnet_set_input_callback(input_callback);
 
-  ctimer_set(&timer, SEND_INTERVAL, timer_callback, NULL);
-  ctimer_set(&check_network_timer, CHECK_NETWORK, send_reachable_state, NULL);
-  ctimer_set(&get_sensor_data_timer, TIME_WINDOW/10, get_sensor_data, NULL); // call for timing to send data
+  ctimer_set(&timer, SEND_INTERVAL, get_in_network, NULL);
+  ctimer_set(&check_network_timer, CHECK_NETWORK, get_node_availability, NULL);
+  ctimer_set(&get_sensor_data_timer, TIME_WINDOW/10, get_sensor_data, NULL);
 
   while (1) {
     PROCESS_WAIT_EVENT();

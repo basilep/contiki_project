@@ -26,8 +26,9 @@
 
 static int in_network = 0; // Says if the node is already connected to the network ()
 
+// ROUTING TABLE
 typedef struct node {
-  linkaddr_t *children; // pointer to an array of linkaddr_t
+  linkaddr_t *children;
   uint16_t nb_children;
 } node_t;
 
@@ -60,12 +61,10 @@ void add_child(node_t *n, linkaddr_t child) {
   }
   else{
     // Allocate memory for one additional child
-    n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));   //-> is used to access the element of a struct through a pointer
+    n->children = realloc(n->children, (n->nb_children + 1) * sizeof(linkaddr_t));
   }
   // Copy the new child's address into the new memory location
   linkaddr_copy(&n->children[n->nb_children], &child);
-
-  // Increment the number of children
   n->nb_children++;
 }
 
@@ -85,7 +84,6 @@ long int handle_clock(clock_time_t received_clock){
   
     for(int i=0; i<clock_array_size; i++){
       num += (clock_time() - clock_array[i]);
-      //LOG_INFO_("Ceci est le num : %ld\n", num);
     }
     clock_compensation = num / clock_array_size;
 
@@ -106,7 +104,7 @@ void timeslots_allocation(){
 
     for (int i=0; i< my_node.nb_children; i++){
       clock_time_t synchronized_clock = clock_time() + clock_compensation;
-      data_to_send.timeslot_array[0] = synchronized_clock + i*timeslot + TIME_WINDOW/20;  // + guardtime
+      data_to_send.timeslot_array[0] = synchronized_clock + i*timeslot + TIME_WINDOW/20;  // TIME_WINDOW/20 is a guardtime
       data_to_send.timeslot_array[1] = synchronized_clock + (i+1)*timeslot;
       data_to_send.step_signal = 9;
       NETSTACK_NETWORK.output(&(my_node.children[i]));
@@ -140,13 +138,13 @@ void input_callback(const void *data, uint16_t len,
         LOG_INFO_(" which is now my child\n");
         add_child(&my_node, src_copy);  //add the child to the list of children
     }
-    else if(data_receive->step_signal == 7){
+    else if(data_receive->step_signal == 7){  //MANAGE CLOCK BERKELEY
       long int synchronized_clock = handle_clock(data_receive->clock);
       if (synchronized_clock != 0){
         data_to_send.clock = synchronized_clock;
         for (int i = 0; i < my_node.nb_children; i++) {
           data_to_send.step_signal = 8;
-          NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
+          NETSTACK_NETWORK.output(&(my_node.children[i]));
         }
       }
       timeslots_allocation();
@@ -158,7 +156,6 @@ void input_callback(const void *data, uint16_t len,
     }
 }
 
-/**/
 static void send_clock_request(void* ptr){
   ctimer_reset(&berkeley_timer);
 
@@ -177,7 +174,7 @@ PROCESS_THREAD(border_router_process, ev, data)
 {
   
   if(!in_network){
-    NETSTACK_NETWORK.output(NULL);  // Needed to activate the antenna has he must do a broadcast first
+    NETSTACK_NETWORK.output(NULL);  // Needed to activate the antenna has it must do a broadcast first before any communication
     in_network = 1;
   }
 
