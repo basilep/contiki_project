@@ -17,6 +17,7 @@
 #include "sys/log.h"
 #define LOG_MODULE "App"
 #define LOG_LEVEL LOG_LEVEL_INFO
+// You can change the level of log to LOG_LEVEL_DBG to see everything
 
 /* OTHER CONFIGURATION */
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
@@ -116,35 +117,35 @@ void input_callback(const void *data, uint16_t len,
   data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t
   if(data_receive->step_signal == 1 && !in_network && data_receive->node_rank == 0){ // CONNECTION RESPONSE
       in_network = 1;
-      LOG_INFO("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
-      LOG_INFO_LLADDR(&src_copy);
+      LOG_DBG("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+      LOG_DBG_LLADDR(&src_copy);
       linkaddr_copy(&(my_node.parent), &src_copy);  //Save the parent address
-      LOG_INFO_(" rank: %d ; SGN 2 (ack) sent to ", data_to_send.node_rank);
-      LOG_INFO_LLADDR(&(my_node.parent));
-      LOG_INFO_("\n");
+      LOG_DBG_(" rank: %d ; SGN 2 (ack) sent to ", data_to_send.node_rank);
+      LOG_DBG_LLADDR(&(my_node.parent));
+      LOG_DBG_("\n");
       data_to_send.step_signal = 2; // Send an ACK to the connection
       NETSTACK_NETWORK.output(&(my_node.parent));
   }
   else if(in_network){
     if(data_receive->step_signal == 0 && data_receive->node_rank != 1){ // CONNECTION REQUEST from sensors
-      LOG_INFO("SGN 0 (connexion request) received from ");
-      LOG_INFO_LLADDR(&src_copy);
+      LOG_DBG("SGN 0 (connexion request) received from ");
+      LOG_DBG_LLADDR(&src_copy);
       data_to_send.step_signal = 1; // Send a connection response
-      LOG_INFO_(" ; SGN 1 (connexion response) send to ");
-      LOG_INFO_LLADDR(&src_copy);
-      LOG_INFO_("\n");
+      LOG_DBG_(" ; SGN 1 (connexion response) send to ");
+      LOG_DBG_LLADDR(&src_copy);
+      LOG_DBG_("\n");
       NETSTACK_NETWORK.output(&src_copy);
     }
     else if(data_receive->step_signal == 2){  // ACKNOWLEDGE CONNECTION
-      LOG_INFO("SGN 2 (ACK) received from ");
-      LOG_INFO_LLADDR(&src_copy);
-      LOG_INFO_(" which is now my child\n");
+      LOG_DBG("SGN 2 (ACK) received from ");
+      LOG_DBG_LLADDR(&src_copy);
+      LOG_DBG_(" which is now my child\n");
       add_child(&my_node, src_copy);  //add the child to the list of children
     }
     else if(data_receive->step_signal == 3){  // REMOVE CHILDREN
-      LOG_INFO("RECEIVED CHILD TO REMOVE from ");
-      LOG_INFO_LLADDR(src);
-      LOG_INFO_("\n");
+      LOG_DBG("RECEIVED CHILD TO REMOVE from ");
+      LOG_DBG_LLADDR(src);
+      LOG_DBG_("\n");
       remove_child(&my_node, src_copy);
     }
     else if(data_receive->step_signal == 4){
@@ -160,33 +161,33 @@ void input_callback(const void *data, uint16_t len,
       }
     }
     else if(data_receive->step_signal == 6){
-      //LOG_INFO("RECEIVED CLOCK REQUEST FROM ");
-      //LOG_INFO_LLADDR(&src_copy);
+      LOG_DBG("RECEIVED CLOCK REQUEST FROM ");
+      LOG_DBG_LLADDR(&src_copy);
       
       data_to_send.clock = (clock_time_t)((long int) clock_time() + clock_compensation); // get its own clock
       data_to_send.step_signal = 7;
-      //TODO: changer le step_signal à envoyer à 7
-      //LOG_INFO_(" ; My clock is %lu", data_to_send.clock);
-      //LOG_INFO_("\n");
+
+      LOG_DBG_(" ; My clock is %lu", data_to_send.clock);
+      LOG_DBG_("\n");
       NETSTACK_NETWORK.output(&src_copy);
 
     }
     else if(data_receive->step_signal == 8){
-      //LOG_INFO("RECEIVED NEW SYNCHRONIZED CLOCK");
+      LOG_DBG("RECEIVED NEW SYNCHRONIZED CLOCK");
       clock_compensation = data_receive->clock - clock_time();
-      //LOG_INFO_(" : %d", clock_compensation);
-      //LOG_INFO_(" ; New clock: %lu\n", data_receive->clock);
+      LOG_DBG_(" : %d", clock_compensation);
+      LOG_DBG_(" ; New clock: %lu\n", data_receive->clock);
     }
     else if(data_receive->step_signal == 9){
-      //LOG_INFO("RECEIVED TIMESLOT");
+      LOG_DBG("RECEIVED TIMESLOT");
       data_to_send.timeslot_array[0] = data_receive->timeslot_array[0];
       data_to_send.timeslot_array[1] = data_receive->timeslot_array[1];
-      //LOG_INFO("Timseslots : 1) %lu ; 2) %lu : \n", data_to_send.timeslot_array[0],data_to_send.timeslot_array[1]);
+      LOG_DBG("Timseslots : 1) %lu ; 2) %lu : \n", data_to_send.timeslot_array[0],data_to_send.timeslot_array[1]);
     }
     else if(data_receive->step_signal == 12){
       data_to_send.data[0] = data_receive->data[0];
       data_to_send.data[1] = data_receive->data[1];
-      //LOG_INFO("RECEIVE DATA FROM NODE %d : %d\n", data_to_send.data[0], data_to_send.data[1]);
+      LOG_DBG("RECEIVE DATA FROM NODE %d : %d\n", data_to_send.data[0], data_to_send.data[1]);
       data_to_send.step_signal = 12;
       NETSTACK_NETWORK.output(&(my_node.parent));
     }
@@ -196,7 +197,7 @@ void input_callback(const void *data, uint16_t len,
 static void get_sensor_data(void* ptr){
   ctimer_reset(&get_sensor_data_timer);
   if(data_to_send.timeslot_array[1] != 0){
-    //LOG_INFO("Current Clock : %lu ; TIME WINDOWS : %lu\n", (clock_time() + clock_compensation), TIME_WINDOW);
+    LOG_DBG("Current Clock : %lu ; TIME WINDOWS : %lu\n", (clock_time() + clock_compensation), TIME_WINDOW);
     if((clock_time() + clock_compensation)>data_to_send.timeslot_array[0] && (clock_time() + clock_compensation)<data_to_send.timeslot_array[1]){
       //Time slot of the coordinator
       for(int i=0; i < my_node.nb_children; i++){ //Notify the children to send data if they have any
@@ -216,9 +217,9 @@ static void get_node_availability(void* ptr){
   ctimer_reset(&check_network_timer);
   for (int i = 0; i < my_node.nb_children; i++) {
     if(my_node.child_reach_count[i]>=1){
-      LOG_INFO_("Child : ");
-      LOG_INFO_LLADDR(&(my_node.children[i]));
-      LOG_INFO_("not reachable anymore\n");
+      LOG_DBG_("Child : ");
+      LOG_DBG_LLADDR(&(my_node.children[i]));
+      LOG_DBG_("not reachable anymore\n");
       remove_child(&my_node, my_node.children[i]);
     }
     else{
@@ -234,7 +235,7 @@ void get_in_network(void* ptr){
   if(!in_network){
     ctimer_reset(&timer);
     // Not in the network at the moment -> broadcast a packet to know the neighboors
-    LOG_INFO("Node %u broadcasts SGN 0\n", node_id);
+    LOG_DBG("Node %u broadcasts SGN 0\n", node_id);
     data_to_send.step_signal = 0;
     NETSTACK_NETWORK.output(NULL);
   }

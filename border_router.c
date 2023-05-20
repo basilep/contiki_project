@@ -17,6 +17,7 @@
 #include "sys/log.h"
 #define LOG_MODULE "App"
 #define LOG_LEVEL LOG_LEVEL_INFO
+// You can change the level of log to LOG_LEVEL_DBG to see everything
 
 /* OTHER CONFIGURATION */
 #define BERKELEY_INTERVAL (5 * CLOCK_SECOND)
@@ -124,18 +125,18 @@ void input_callback(const void *data, uint16_t len,
     linkaddr_copy(&src_copy, src);
     data_structure_t *data_receive = (data_structure_t *) data; // Cast the data to data_structure_t
     if(data_receive->step_signal == 0 && data_receive->node_rank == 1){ // CONNECTION REQUEST from coordinators
-        LOG_INFO("SGN 0 (connexion request) received from ");
-        LOG_INFO_LLADDR(&src_copy);
+        LOG_DBG("SGN 0 (connexion request) received from ");
+        LOG_DBG_LLADDR(&src_copy);
         data_to_send.step_signal = 1; // Send a connection response
-        LOG_INFO_(" ; SGN 1 (connexion response) send to ");
-        LOG_INFO_LLADDR(&src_copy);
-        LOG_INFO_("\n");
+        LOG_DBG_(" ; SGN 1 (connexion response) send to ");
+        LOG_DBG_LLADDR(&src_copy);
+        LOG_DBG_("\n");
         NETSTACK_NETWORK.output(&src_copy);
     }
     else if(data_receive->step_signal == 2){  // ACKNOWLEDGE CONNECTION
-        LOG_INFO("SGN 2 (ACK) received from ");
-        LOG_INFO_LLADDR(&src_copy);
-        LOG_INFO_(" which is now my child\n");
+        LOG_DBG("SGN 2 (ACK) received from ");
+        LOG_DBG_LLADDR(&src_copy);
+        LOG_DBG_(" which is now my child\n");
         add_child(&my_node, src_copy);  //add the child to the list of children
     }
     else if(data_receive->step_signal == 7){  //MANAGE CLOCK BERKELEY
@@ -160,13 +161,13 @@ static void send_clock_request(void* ptr){
   ctimer_reset(&berkeley_timer);
 
   data_to_send.step_signal = 6;
-  //LOG_INFO("I'm sending clock request %u to my children : ", data_to_send.step_signal);
+  LOG_DBG("I'm sending clock request %u to my children : ", data_to_send.step_signal);
   for (int i = 0; i < my_node.nb_children; i++) {
-    //LOG_INFO_LLADDR(&(my_node.children[i]));
-    //LOG_INFO_(" ; ");
+    LOG_DBG_LLADDR(&(my_node.children[i]));
+    LOG_DBG_(" ; ");
     NETSTACK_NETWORK.output(&(my_node.children[i]));  // Use to sent data to the destination
   }
-  //LOG_INFO_("\n");
+  LOG_DBG_("\n");
 }
 
 /* MAIN PART PROCESS CODE */

@@ -15,6 +15,8 @@
 #include "sys/log.h"
 #define LOG_MODULE "App"
 #define LOG_LEVEL LOG_LEVEL_INFO
+// You can change the level of log to LOG_LEVEL_DBG to see everything
+
 
 /* OTHER CONFIGURATION */
 #define SEND_INTERVAL (2 * CLOCK_SECOND)
@@ -100,7 +102,7 @@ void remove_child(node_t *n, linkaddr_t child) {
    return 1 if the new rssi is better
 */
 int is_better_rssi(){
-  LOG_INFO_(" RSSI : best = %d, current = %d ; ", best_rssi, packetbuf_attr(PACKETBUF_ATTR_RSSI));
+  LOG_DBG_(" RSSI : best = %d, current = %d ; ", best_rssi, packetbuf_attr(PACKETBUF_ATTR_RSSI));
   if(best_rssi < packetbuf_attr(PACKETBUF_ATTR_RSSI)){
     return 1;
   }
@@ -126,14 +128,14 @@ void input_callback(const void *data, uint16_t len,
 
       if(data_to_send.node_rank == -1 || data_receive->node_rank== 1 || (data_receive->node_rank > 1 && data_to_send.node_rank > 2 && data_receive->node_rank < data_to_send.node_rank)){
         in_network = 1;
-        LOG_INFO("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
-        LOG_INFO_LLADDR(&src_copy);
+        LOG_DBG("SGN 1 (ACCEPTED) with rssi %d from ",packetbuf_attr(PACKETBUF_ATTR_RSSI));
+        LOG_DBG_LLADDR(&src_copy);
         best_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
         linkaddr_copy(&(my_node.parent), &src_copy);  //Save the parent address
         data_to_send.node_rank = data_receive->node_rank +1;  //Save the rank as the parent rank +1
-        LOG_INFO_(" new rank: %d ; SGN 2 (ack) sent to ", data_to_send.node_rank);
-        LOG_INFO_LLADDR(&(my_node.parent));
-        LOG_INFO_("\n");
+        LOG_DBG_(" new rank: %d ; SGN 2 (ack) sent to ", data_to_send.node_rank);
+        LOG_DBG_LLADDR(&(my_node.parent));
+        LOG_DBG_("\n");
         data_to_send.step_signal = 2; // Send an ACK to the connection
         NETSTACK_NETWORK.output(&(my_node.parent));
       }
@@ -141,19 +143,19 @@ void input_callback(const void *data, uint16_t len,
   }
   else if(in_network){
     if(data_receive->step_signal == 0){ // CONNECTION REQUEST
-      LOG_INFO("SGN 0 (connexion request) received from ");
-      LOG_INFO_LLADDR(&src_copy);
+      LOG_DBG("SGN 0 (connexion request) received from ");
+      LOG_DBG_LLADDR(&src_copy);
       data_to_send.step_signal = 1; // Send a connection response
-      LOG_INFO_(" ; SGN 1 (connexion response) send to ");
-      LOG_INFO_LLADDR(&src_copy);
-      LOG_INFO_("\n");
+      LOG_DBG_(" ; SGN 1 (connexion response) send to ");
+      LOG_DBG_LLADDR(&src_copy);
+      LOG_DBG_("\n");
       NETSTACK_NETWORK.output(&src_copy);
     }
     else if(data_receive->step_signal == 1 && !linkaddr_cmp(&(my_node.parent), &linkaddr_null)){  //Also check if there is a parent
       if(data_receive->node_rank == 1 || (data_receive->node_rank > 1 && data_to_send.node_rank > 2 && data_receive->node_rank < data_to_send.node_rank)){
-        LOG_INFO("SGN 1 received from ");
-        LOG_INFO_LLADDR(&src_copy);
-        LOG_INFO_(" ; let's check rssi ;");
+        LOG_DBG("SGN 1 received from ");
+        LOG_DBG_LLADDR(&src_copy);
+        LOG_DBG_(" ; let's check rssi ;");
       
         if(is_better_rssi()){
           // If rank has changed, aware its children to change their rank
@@ -166,32 +168,32 @@ void input_callback(const void *data, uint16_t len,
           }
           data_to_send.node_rank = data_receive->node_rank +1;  //Change rank
           data_to_send.step_signal = 3; // aware the parent the he found a new better node, to delete it from its list
-          LOG_INFO_(" SEND SGN 3 to ");
-          LOG_INFO_LLADDR(&(my_node.parent));
-          LOG_INFO_("\n");
+          LOG_DBG_(" SEND SGN 3 to ");
+          LOG_DBG_LLADDR(&(my_node.parent));
+          LOG_DBG_("\n");
           NETSTACK_NETWORK.output(&(my_node.parent));
-          LOG_INFO_LLADDR(&src_copy);
-          LOG_INFO_(" has a better rssi, he will be now my parent ; new rank : %d ; ", data_to_send.node_rank);
+          LOG_DBG_LLADDR(&src_copy);
+          LOG_DBG_(" has a better rssi, he will be now my parent ; new rank : %d ; ", data_to_send.node_rank);
           best_rssi = packetbuf_attr(PACKETBUF_ATTR_RSSI);
           linkaddr_copy(&(my_node.parent), &src_copy);
           data_to_send.step_signal = 2; // Send an ACK to the connection
-          LOG_INFO_("SGN 2 (ack) sent to ");
-          LOG_INFO_LLADDR(&(my_node.parent));
-          LOG_INFO_("\n");
+          LOG_DBG_("SGN 2 (ack) sent to ");
+          LOG_DBG_LLADDR(&(my_node.parent));
+          LOG_DBG_("\n");
           NETSTACK_NETWORK.output(&(my_node.parent));
         }
       }
     }
     else if(data_receive->step_signal == 2){  // ACKNOWLEDGE CONNECTION
-      LOG_INFO("SGN 2 (ACK) received from ");
-      LOG_INFO_LLADDR(&src_copy);
-      LOG_INFO_(" which is now my child\n");
+      LOG_DBG("SGN 2 (ACK) received from ");
+      LOG_DBG_LLADDR(&src_copy);
+      LOG_DBG_(" which is now my child\n");
       add_child(&my_node, src_copy);  //add the child to the list of children
     }
     else if(data_receive->step_signal == 3){  // REMOVE CHILDREN
-      LOG_INFO("RECEIVED CHILD TO REMOVE from ");
-      LOG_INFO_LLADDR(&src_copy);
-      LOG_INFO_("\n");
+      LOG_DBG("RECEIVED CHILD TO REMOVE from ");
+      LOG_DBG_LLADDR(&src_copy);
+      LOG_DBG_("\n");
       remove_child(&my_node, src_copy);
     }
     else if(data_receive->step_signal == 4){  // NODE AVAILABILITY CHECK
@@ -245,9 +247,9 @@ static void get_node_availability(void* ptr){
   ctimer_reset(&check_network_timer);
   if(!linkaddr_cmp(&(my_node.parent), &linkaddr_null)){ // Check If there is a parent
     if(my_node.parent_reach_count>=1){
-      LOG_INFO_("Parent not reachable anymore : ");
-      LOG_INFO_LLADDR(&my_node.parent);
-      LOG_INFO_("; temporary removal\n");
+      LOG_DBG_("Parent not reachable anymore : ");
+      LOG_DBG_LLADDR(&my_node.parent);
+      LOG_DBG_("; temporary removal\n");
       linkaddr_copy(&my_node.parent, &linkaddr_null); //setting parent to the null address
       my_node.parent_reach_count = -1;  //So it goes to 0 after the next increment
       in_network = 0;
@@ -261,9 +263,9 @@ static void get_node_availability(void* ptr){
   }
   for (int i = 0; i < my_node.nb_children; i++) {
     if(my_node.child_reach_count[i]>=1){
-      LOG_INFO_("Child : ");
-      LOG_INFO_LLADDR(&(my_node.children[i]));
-      LOG_INFO_(" not reachable anymore\n");
+      LOG_DBG_("Child : ");
+      LOG_DBG_LLADDR(&(my_node.children[i]));
+      LOG_DBG_(" not reachable anymore\n");
       remove_child(&my_node, my_node.children[i]);
     }
     else{
@@ -279,7 +281,7 @@ void get_in_network(void* ptr){
   ctimer_reset(&timer);
   if(!in_network){
     // Not in the network at the moment -> broadcast a packet to know the neighboors
-    LOG_INFO("Node %u broadcasts SGN 0\n", node_id); //node_id return the ID of the current node
+    LOG_DBG("Node %u broadcasts SGN 0\n", node_id); //node_id return the ID of the current node
     data_to_send.step_signal = 0;
     NETSTACK_NETWORK.output(NULL);
   }
